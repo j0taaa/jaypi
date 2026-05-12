@@ -26,8 +26,10 @@ import { ProgressTrackerManager } from "./progress-tracker.js";
 import { groupSessionsByProject } from "./projects.js";
 import { RpcBridge } from "./rpc-bridge.js";
 import { deleteWebSkill, listWebSkills, writeWebSkill } from "./skills.js";
+import { SubagentSessionManager } from "./subagent-session.js";
 import { TerminalManager, TerminalUnavailableError } from "./terminal.js";
 import type {
+	AgentRegistrySyncRequest,
 	ApplyAgentRequest,
 	AskQuestionAnswer,
 	AskQuestionRequest,
@@ -38,6 +40,7 @@ import type {
 	SetModelRequest,
 	SetThinkingRequest,
 	SkillWriteRequest,
+	SubagentSessionRequest,
 	SwitchSessionRequest,
 	SystemPromptRequest,
 	TerminalInputRequest,
@@ -83,10 +86,15 @@ async function startWebServer(options: WebOptions): Promise<void> {
 	let rpcBusy = false;
 	let askQuestionUrl = "";
 	let progressTrackerUrl = "";
+	let subagentSessionUrl = "";
 	let rpc = undefined as unknown as RpcBridge;
 	const terminalManager = new TerminalManager({ broadcast });
 	const progressTrackerManager = new ProgressTrackerManager(broadcast);
 	const gitProjectManager = new GitProjectManager(broadcast);
+	const subagentSessionManager = new SubagentSessionManager(
+		broadcast,
+		(childBroadcast, cwd, extraEnv) => new RpcBridge(cliPath, options.rpcArgs, childBroadcast, cwd, extraEnv),
+	);
 	let mainSystemPromptOverride = await readMainSystemPromptOverride();
 	const pendingQuestions = new Map<string, PendingQuestion>();
 	let checkpointChain = Promise.resolve();
@@ -117,6 +125,7 @@ async function startWebServer(options: WebOptions): Promise<void> {
 		return {
 			...(askQuestionUrl ? { PI_WEB_ASK_QUESTION_URL: askQuestionUrl } : {}),
 			...(progressTrackerUrl ? { PI_WEB_PROGRESS_TRACKER_URL: progressTrackerUrl } : {}),
+			...(subagentSessionUrl ? { PI_WEB_SUBAGENT_SESSION_URL: subagentSessionUrl } : {}),
 		};
 	}
 
@@ -280,6 +289,18 @@ async function startWebServer(options: WebOptions): Promise<void> {
 			const body = await readJsonBody<AskQuestionAnswer & { id?: string }>(req, 64 * 1024);
 			answerQuestion(body.id, body);
 			sendJson(res, { success: true });
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/agents/registry") {
+			const body = await readJsonBody<AgentRegistrySyncRequest>(req, 1024 * 1024);
+			subagentSessionManager.setAgents(Array.isArray(body.agents) ? body.agents : []);
+			sendJson(res, { success: true });
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/subagent-session") {
+			const body = await readJsonBody<SubagentSessionRequest>(req, 1024 * 1024);
+			const data = await subagentSessionManager.run(body, activeCwd, webEnv());
+			sendJson(res, { success: true, data }, 200);
 			return;
 		}
 		if (req.method === "GET" && url.pathname === "/api/progress-tracker") {
@@ -666,6 +687,7 @@ async function startWebServer(options: WebOptions): Promise<void> {
 	const port = typeof address === "object" && address ? address.port : options.port;
 	askQuestionUrl = askQuestionEndpointUrl(options.host, port, token);
 	progressTrackerUrl = progressTrackerEndpointUrl(options.host, port, token);
+	subagentSessionUrl = subagentSessionEndpointUrl(options.host, port, token);
 	await restartRpc(activeCwd, false);
 	void gitProjectManager.broadcastStatus(activeCwd);
 	const urls = webUrls(options.host, port, token);
@@ -678,6 +700,7 @@ async function startWebServer(options: WebOptions): Promise<void> {
 		server.close();
 		terminalManager.stopAll();
 		progressTrackerManager.stopAll();
+		subagentSessionManager.stopAll();
 		rpc.stop();
 		for (const [id, pending] of pendingQuestions) {
 			clearTimeout(pending.timeout);
@@ -765,6 +788,10 @@ function askQuestionEndpointUrl(host: string, port: number, token: string): stri
 
 function progressTrackerEndpointUrl(host: string, port: number, token: string): string {
 	return webApiEndpointUrl(host, port, token, "/api/progress-tracker");
+}
+
+function subagentSessionEndpointUrl(host: string, port: number, token: string): string {
+	return webApiEndpointUrl(host, port, token, "/api/subagent-session");
 }
 
 function webApiEndpointUrl(host: string, port: number, token: string, pathname: string): string {

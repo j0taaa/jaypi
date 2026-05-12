@@ -125,6 +125,7 @@ function App() {
   const [state, setState] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
   const [progressTracker, setProgressTracker] = useState<any>(null);
+  const [subagentRuns, setSubagentRuns] = useState<any[]>([]);
   const [gitStatus, setGitStatus] = useState<GitProjectStatus | null>(null);
   const [gitBranches, setGitBranches] = useState<GitBranchInfo[]>([]);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
@@ -258,6 +259,15 @@ function App() {
     queuedPromptsRef.current = next;
     setQueuedPrompts(next);
     localStorage.setItem('piWebQueuedPrompts', JSON.stringify(next));
+  }
+  function upsertSubagentRun(data: any) {
+    if (!data?.id) return;
+    setSubagentRuns(prev => {
+      const next = prev.some(item => item.id === data.id)
+        ? prev.map(item => item.id === data.id ? { ...item, ...data } : item)
+        : [{ ...data }, ...prev];
+      return next.slice(0, 5);
+    });
   }
   function enqueuePrompt(message: string, attachments: any[] = []) {
     const next = [...queuedPromptsRef.current, { id: uid('queued'), message, attachments }];
@@ -413,6 +423,16 @@ function App() {
   async function loadSkills() {
     try { const json = await (await fetch('/api/skills')).json(); setSkills(json.skills || []); } catch { setSkills([]); }
   }
+  async function syncAgentRegistry() {
+    const payload = [...builtinAgents.map(agent => builtinAgentDefaults(agent)), ...agents].map((agent: any) => ({
+      id: agent.id,
+      name: agent.name,
+      description: agent.description || '',
+      systemPrompt: agent.systemPrompt || '',
+      tools: agent.tools || [],
+    }));
+    await fetch('/api/agents/registry', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agents: payload }) }).catch(() => {});
+  }
   async function applyRoute(projectList = projects) {
     const route = routeInfo();
     if (route.page === 'skills') { setView('skills'); loadSkills(); return; }
@@ -477,6 +497,7 @@ function App() {
     return () => window.removeEventListener('popstate', pop);
   }, []);
   useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight }); }, [messages]);
+  useEffect(() => { void syncAgentRegistry(); }, [agents, builtinAgentOverrides, mainSystemPrompt, skills, tools, state?.cwd]);
   useEffect(() => {
     if (view !== 'chat') return;
     requestAnimationFrame(() => logRef.current?.scrollTo({ top: logRef.current.scrollHeight }));
@@ -547,6 +568,10 @@ function App() {
     }
     if (e.type === 'git_status' || e.type === 'git_checkpoint') {
       setGitStatus(e.data || null);
+    }
+    if (e.type === 'subagent_start' || e.type === 'subagent_update' || e.type === 'subagent_end' || e.type === 'subagent_error') {
+      upsertSubagentRun(e.data || {});
+      if (e.type === 'subagent_start' || e.type === 'subagent_end' || e.type === 'subagent_error') setTimeout(loadProjects, 250);
     }
     if (e.type === 'agent_start') { resetStreamingRefs(); setBusyState(true); setStatus('thinking…'); }
     if (e.type === 'web_connected' && e.rpcBusy) { setBusyState(true); setStatus('thinking…'); loadState(); }
@@ -662,6 +687,17 @@ function App() {
       addItem({ kind: 'tool', title: 'Progress tracker remove failed', text: String(err.message || err), error: true });
     }
   }
+  async function openSubagentRun(run: any) {
+    if (!run?.sessionFile) return;
+    const projectList = await loadProjects();
+    for (const project of projectList) {
+      const session = project.sessions.find((item: any) => item.path === run.sessionFile);
+      if (session) {
+        await openSession(project, session, true);
+        return;
+      }
+    }
+  }
   async function runGitAction(action: string, body?: Record<string, unknown>) {
     setGitBusy(action);
     try {
@@ -766,7 +802,7 @@ function App() {
   }
   function builtinAgentDefaults(agent: any) {
     const defaults = agent.id === 'builtin-main'
-      ? { ...agent, systemPrompt: mainSystemPrompt, skills: skills.filter((skill: any) => skill.name !== 'ask-question' && skill.name !== 'progress-tracker').map((skill: any) => skill.name), tools: [...builtinTools, ...tools].map((tool: any) => tool.name) }
+      ? { ...agent, systemPrompt: mainSystemPrompt, skills: skills.filter((skill: any) => skill.name !== 'ask-question' && skill.name !== 'progress-tracker' && skill.name !== 'subagent-session').map((skill: any) => skill.name), tools: [...builtinTools, ...tools].map((tool: any) => tool.name) }
       : agent;
     return { ...defaults, ...(builtinAgentOverrides[agent.id] || {}) };
   }
@@ -812,7 +848,7 @@ function App() {
         <div className="flex items-center gap-2"><button type="button" className="hidden rounded-lg bg-gray-100 px-2 py-1 text-gray-700 dark:bg-neutral-900 dark:text-slate-200 max-[820px]:block" onClick={() => setSidebarOpen(true)}>☰</button><h1 className="text-xs font-semibold">{view === 'skills' ? 'Skills' : view === 'tools' ? 'Tools' : 'Agents'}</h1></div>
         <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500"><ThemeToggle value={themePreference} onChange={setThemePreference} /><span>π Pi Web</span></div>
       </header>}
-      {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} agentOptions={availableChatAgents} selectedAgentId={selectedChatAgentId} setSelectedAgentId={setSelectedChatAgentId} showAgentPicker={emptyChat} />}
+      {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} subagentRuns={subagentRuns} openSubagentRun={openSubagentRun} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} agentOptions={availableChatAgents} selectedAgentId={selectedChatAgentId} setSelectedAgentId={setSelectedChatAgentId} showAgentPicker={emptyChat} />}
       {view === 'skills' && <SkillsView skills={skills} reload={async () => { await loadSkills(); await loadCommands(); }} openModal={setSkillModal} />}
       {view === 'tools' && <ToolsView tools={[...builtinTools, ...tools]} openModal={setToolModal} saveTools={saveTools} customTools={tools} />}
       {view === 'agents' && <AgentsView builtinAgents={resolvedBuiltinAgents} customAgents={agents} openModal={setAgentModal} saveAgents={saveAgents} />}

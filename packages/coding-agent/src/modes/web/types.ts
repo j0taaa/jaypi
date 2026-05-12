@@ -65,6 +65,21 @@ export interface ProgressTrackerData {
 	tasks: ProgressTrackerTask[];
 }
 
+export type SubagentSessionStatus = "running" | "done" | "error";
+
+export interface SubagentSessionData {
+	id: string;
+	agent: string;
+	prompt: string;
+	cwd: string;
+	sessionFile: string;
+	sessionId: string;
+	answer: string;
+	status: SubagentSessionStatus;
+	message?: string;
+	error?: string;
+}
+
 export interface GitChangedLines {
 	added: number;
 	deleted: number;
@@ -114,6 +129,10 @@ export type WebEvent =
 	| {
 			type: "git_status" | "git_checkpoint";
 			data: GitProjectStatus;
+	  }
+	| {
+			type: "subagent_start" | "subagent_update" | "subagent_end" | "subagent_error";
+			data: Partial<SubagentSessionData> & { id: string };
 	  }
 	| {
 			type: "terminal_start" | "terminal_output" | "terminal_exit";
@@ -175,6 +194,23 @@ export interface AskQuestionRequest {
 
 export interface ProgressTrackerRequest {
 	path: string;
+}
+
+export interface AgentRegistrySyncRequest {
+	agents: SubagentAgentRequest[];
+}
+
+export interface SubagentAgentRequest {
+	id?: string;
+	name: string;
+	description?: string;
+	systemPrompt: string;
+	tools?: string[];
+}
+
+export interface SubagentSessionRequest {
+	agent: string;
+	prompt: string;
 }
 
 export interface ApplyAgentRequest {

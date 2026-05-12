@@ -18,7 +18,9 @@ import {
 } from "../src/modes/web/progress-tracker.js";
 import { RpcBridge } from "../src/modes/web/rpc-bridge.js";
 import { deleteWebSkill, listWebSkills, resolveSkillPath, writeWebSkill } from "../src/modes/web/skills.js";
+import { type SubagentRpc, SubagentSessionManager } from "../src/modes/web/subagent-session.js";
 import { TerminalManager, TerminalUnavailableError } from "../src/modes/web/terminal.js";
+import type { Broadcast, WebRpcCommand, WebRpcResponse } from "../src/modes/web/types.js";
 
 const tempDirs: string[] = [];
 
@@ -158,8 +160,20 @@ describe("web skills", () => {
 			"---\nname: progress-tracker\ndescription: Track progress\n---\n# Progress Tracker\n",
 			"utf8",
 		);
+		const subagentSkillDir = path.join(sourceBuiltinsRoot, "subagent-session");
+		await fsp.mkdir(subagentSkillDir, { recursive: true });
+		await fsp.writeFile(
+			path.join(subagentSkillDir, "SKILL.md"),
+			"---\nname: subagent-session\ndescription: Run subagents\n---\n# Subagent Session\n",
+			"utf8",
+		);
 		const skills = await listWebSkills(root, [builtinsRoot, sourceBuiltinsRoot]);
-		expect(skills.map((skill) => skill.name)).toEqual(["ask-question", "progress-tracker", "show-images"]);
+		expect(skills.map((skill) => skill.name)).toEqual([
+			"ask-question",
+			"progress-tracker",
+			"show-images",
+			"subagent-session",
+		]);
 		expect(skills.every((skill) => skill.builtin)).toBe(true);
 		await expect(deleteWebSkill(skills[0].path, root)).rejects.toMatchObject({ status: 400 });
 	});
@@ -186,6 +200,85 @@ describe("web skills", () => {
 		});
 	});
 });
+
+describe("subagent session manager", () => {
+	test("resolves synced agents and rejects bad requests", async () => {
+		const manager = new SubagentSessionManager(vi.fn(), () => {
+			throw new Error("should not create rpc");
+		});
+		manager.setAgents([{ id: "builtin-plan", name: "Plan", systemPrompt: "plan", tools: [] }]);
+		expect(manager.resolveAgent("builtin-plan").name).toBe("Plan");
+		expect(manager.resolveAgent("Plan").id).toBe("builtin-plan");
+		await expect(manager.run({ agent: "Missing", prompt: "x" }, await tempDir())).rejects.toMatchObject({
+			status: 400,
+		});
+		await expect(manager.run({ agent: "Plan", prompt: " " }, await tempDir())).rejects.toMatchObject({ status: 400 });
+	});
+
+	test("creates a child session, runs the target agent, and returns the final answer", async () => {
+		const events: unknown[] = [];
+		const commands: WebRpcCommand[] = [];
+		let childBroadcast: Broadcast | null = null;
+		const manager = new SubagentSessionManager(
+			(event) => events.push(event),
+			(broadcast): SubagentRpc => {
+				childBroadcast = broadcast;
+				return {
+					send: async <T extends WebRpcResponse = WebRpcResponse>(command: WebRpcCommand): Promise<T> => {
+						commands.push(command);
+						if (command.type === "new_session") return ok(command.type, { cancelled: false }) as T;
+						if (command.type === "set_active_tools") return ok(command.type, { tools: command.tools }) as T;
+						if (command.type === "set_system_prompt")
+							return ok(command.type, { systemPrompt: command.systemPrompt }) as T;
+						if (command.type === "set_session_name") return ok(command.type) as T;
+						if (command.type === "get_state")
+							return ok(command.type, { sessionFile: "/tmp/subagent.jsonl", sessionId: "session-id" }) as T;
+						if (command.type === "prompt") {
+							setTimeout(() => childBroadcast?.({ type: "agent_start" }), 0);
+							setTimeout(() => childBroadcast?.({ type: "agent_end" }), 0);
+							return ok(command.type) as T;
+						}
+						if (command.type === "get_last_assistant_text")
+							return ok(command.type, { text: "planned answer" }) as T;
+						return ok(command.type) as T;
+					},
+					stop: vi.fn(),
+				};
+			},
+		);
+		manager.setAgents([{ id: "builtin-plan", name: "Plan", systemPrompt: "plan prompt", tools: ["read"] }]);
+		const result = await manager.run({ agent: "Plan", prompt: "make a plan" }, await tempDir());
+		expect(result).toMatchObject({
+			agent: "Plan",
+			prompt: "make a plan",
+			sessionFile: "/tmp/subagent.jsonl",
+			sessionId: "session-id",
+			answer: "planned answer",
+			status: "done",
+		});
+		expect(commands.map((command) => command.type)).toEqual([
+			"new_session",
+			"set_active_tools",
+			"set_system_prompt",
+			"get_state",
+			"set_session_name",
+			"prompt",
+			"get_last_assistant_text",
+		]);
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ type: "subagent_start" }),
+				expect.objectContaining({ type: "subagent_end" }),
+			]),
+		);
+	});
+});
+
+function ok(command: string, data?: unknown): WebRpcResponse {
+	return data === undefined
+		? ({ type: "response", command, success: true } as WebRpcResponse)
+		: ({ type: "response", command, success: true, data } as WebRpcResponse);
+}
 
 describe("progress tracker", () => {
 	test("parses markdown task markers", () => {

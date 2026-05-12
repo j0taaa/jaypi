@@ -40,7 +40,7 @@ function ProjectTree({ project, collapsed, icon, currentSessionPath, onToggle, o
     </div>)}
   </div>;
 }
-function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker }: any) {
+function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker }: any) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -174,6 +174,7 @@ function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessa
     </div></main>
     <form ref={formRef} onSubmit={submitPrompt} className="fixed bottom-0 left-[290px] right-0 bg-gradient-to-t from-white via-white px-6 pb-4 pt-3 dark:from-black dark:via-black max-[820px]:left-0"><div className="mx-auto w-full max-w-6xl">
       {progressTracker && <ProgressTrackerPanel tracker={progressTracker} onRemove={removeProgressTracker} />}
+      {subagentRuns?.length > 0 && <SubagentRunsPanel runs={subagentRuns} openRun={openSubagentRun} />}
       {showAgentPicker && <BlankConversationAgentPicker agents={agentOptions || []} selectedAgentId={selectedAgentId} setSelectedAgentId={setSelectedAgentId} />}
       {showSuggestions && <div className="mb-2 max-h-64 overflow-auto rounded-2xl border border-gray-200 bg-white p-1.5 shadow-pi dark:border-neutral-800 dark:bg-neutral-950">
         {slashMatches.map((command: any, index: number) => <button key={command.name} type="button" className={'flex w-full items-baseline gap-3 rounded-xl px-3 py-2 text-left hover:bg-[#f2f4ff] dark:hover:bg-neutral-900 ' + (index === selectedSuggestion ? 'bg-[#f2f4ff] dark:bg-neutral-900' : '')} onMouseDown={ev => { ev.preventDefault(); runSuggestion(command); }}>
@@ -233,6 +234,18 @@ function BlankConversationAgentPicker({ agents, selectedAgentId, setSelectedAgen
       </select>
     </label>
     <div className="min-w-0 flex-1 truncate text-gray-400 dark:text-slate-500" title={selected.description || ''}>{selected.description || 'Choose who should answer this conversation.'}</div>
+  </div>;
+}
+function SubagentRunsPanel({ runs, openRun }: any) {
+  return <div className="mb-2 max-h-40 overflow-auto rounded-2xl border border-gray-200 bg-white/95 p-1.5 shadow-sm dark:border-neutral-800 dark:bg-neutral-950/95">
+    {runs.map((run: any) => <button key={run.id} type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-neutral-900" onClick={() => openRun(run)} title={run.sessionFile || ''}>
+      <span className={'h-3 w-3 shrink-0 rounded-full ' + (run.status === 'running' ? 'animate-spin border-2 border-piAccent border-t-transparent bg-transparent' : run.status === 'error' ? 'bg-red-500' : 'bg-green-600')} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-semibold text-gray-700 dark:text-slate-200">{run.agent || 'Subagent'} · {run.status || 'running'}</span>
+        <span className="block truncate text-[11px] text-gray-400 dark:text-slate-500">{run.error || run.message || run.prompt || 'Running in a child session'}</span>
+      </span>
+      {run.sessionFile && <span className="shrink-0 text-[11px] font-semibold text-piAccent">Open</span>}
+    </button>)}
   </div>;
 }
 function ProgressTrackerPanel({ tracker, onRemove }: any) {
