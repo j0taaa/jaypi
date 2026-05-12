@@ -129,12 +129,26 @@ async function startWebServer(options: WebOptions): Promise<void> {
 		};
 	}
 
+	function syncProcessWebEnv(): void {
+		for (const [key, value] of Object.entries(webEnv())) {
+			if (value) process.env[key] = value;
+		}
+	}
+
+	async function syncRpcWebEnv(targetRpc = rpc): Promise<void> {
+		const env = webEnv();
+		if (Object.keys(env).length === 0) return;
+		const response = await targetRpc.send({ type: "set_env", env }, 120000);
+		if (!response.success) throw new Error(response.error);
+	}
+
 	async function restartRpc(cwd: string, startNewSession: boolean): Promise<string> {
 		const resolvedCwd = path.resolve(cwd);
 		const previous = rpc;
 		rpc = new RpcBridge(cliPath, options.rpcArgs, broadcast, resolvedCwd, webEnv());
 		activeCwd = resolvedCwd;
 		previous?.stop();
+		await syncRpcWebEnv();
 		if (startNewSession) await rpc.send({ type: "new_session" });
 		await applyMainSystemPromptOverride();
 		return resolvedCwd;
@@ -412,6 +426,7 @@ async function startWebServer(options: WebOptions): Promise<void> {
 			const tools = Array.isArray(body.tools)
 				? body.tools.filter((tool): tool is string => typeof tool === "string" && tool.trim().length > 0)
 				: [];
+			await syncRpcWebEnv();
 			const toolsResponse = await rpc.send({ type: "set_active_tools", tools }, 120000);
 			if (!toolsResponse.success) {
 				sendJson(res, toolsResponse, 400);
@@ -688,6 +703,7 @@ async function startWebServer(options: WebOptions): Promise<void> {
 	askQuestionUrl = askQuestionEndpointUrl(options.host, port, token);
 	progressTrackerUrl = progressTrackerEndpointUrl(options.host, port, token);
 	subagentSessionUrl = subagentSessionEndpointUrl(options.host, port, token);
+	syncProcessWebEnv();
 	await restartRpc(activeCwd, false);
 	void gitProjectManager.broadcastStatus(activeCwd);
 	const urls = webUrls(options.host, port, token);

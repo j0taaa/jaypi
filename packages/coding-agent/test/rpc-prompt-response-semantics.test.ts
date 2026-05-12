@@ -283,4 +283,34 @@ describe("RPC prompt response semantics", () => {
 			await cleanup();
 		}
 	});
+
+	it("updates process environment for later tool executions", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+
+		try {
+			delete process.env.PI_WEB_SUBAGENT_SESSION_URL;
+			lineHandler(
+				JSON.stringify({
+					id: "env1",
+					type: "set_env",
+					env: { PI_WEB_SUBAGENT_SESSION_URL: "http://127.0.0.1:5173/api/subagent-session" },
+				}),
+			);
+
+			await vi.waitFor(() => {
+				const responses = parseOutputLines(rpcIo.outputLines).filter(
+					(record) => record.id === "env1" && record.type === "response" && record.command === "set_env",
+				);
+				expect(responses).toHaveLength(1);
+				expect(responses[0]).toMatchObject({
+					success: true,
+					data: { keys: ["PI_WEB_SUBAGENT_SESSION_URL"] },
+				});
+				expect(process.env.PI_WEB_SUBAGENT_SESSION_URL).toBe("http://127.0.0.1:5173/api/subagent-session");
+			});
+		} finally {
+			delete process.env.PI_WEB_SUBAGENT_SESSION_URL;
+			await cleanup();
+		}
+	});
 });

@@ -29,6 +29,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_system_prompt" }
 	| { id?: string; type: "set_system_prompt"; systemPrompt: string }
 	| { id?: string; type: "set_active_tools"; tools: string[] }
+	| { id?: string; type: "set_env"; env: Record<string, string | null | undefined> }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -124,6 +125,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "get_system_prompt"; success: true; data: { systemPrompt: string } }
 	| { id?: string; type: "response"; command: "set_system_prompt"; success: true; data: { systemPrompt: string } }
 	| { id?: string; type: "response"; command: "set_active_tools"; success: true; data: { tools: string[] } }
+	| { id?: string; type: "response"; command: "set_env"; success: true; data: { keys: string[] } }
 
 	// Model
 	| {
