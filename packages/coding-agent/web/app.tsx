@@ -285,7 +285,13 @@ function App() {
   async function applySelectedChatAgent() {
     const agent = selectedChatAgent();
     if (!agent) return;
+    if (agent.id === 'builtin-main') return;
     const res = await fetch('/api/agent/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemPrompt: agent.systemPrompt, tools: agent.tools || [] }) });
+    if (res.status === 404) {
+      const fallback = await fetch('/api/system-prompt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemPrompt: agent.systemPrompt }) });
+      if (!fallback.ok) throw new Error(await fallback.text());
+      return;
+    }
     if (!res.ok) throw new Error(await res.text());
   }
   async function sendPrompt(message: string, streamingBehavior?: 'followUp' | 'steer', renderUser = true, attachments: any[] = []) {
