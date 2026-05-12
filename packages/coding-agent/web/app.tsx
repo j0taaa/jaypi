@@ -146,6 +146,7 @@ function App() {
   const [toolModal, setToolModal] = useState<any>(null);
   const [agents, setAgents] = useState<any[]>(() => safeJson(localStorage.getItem('piWebCustomAgents'), []));
   const [builtinAgentOverrides, setBuiltinAgentOverrides] = useState<Record<string, any>>(() => safeJson(localStorage.getItem('piWebBuiltinAgentOverrides'), {}));
+  const [selectedChatAgentId, setSelectedChatAgentId] = useState('builtin-main');
   const [agentModal, setAgentModal] = useState<any>(null);
   const [commandModal, setCommandModal] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -271,6 +272,22 @@ function App() {
     if (textFiles.length) finalMessage += '\n\nAttached files:\n' + textFiles.map(file => '--- ' + file.name + ' ---\n' + file.text).join('\n\n');
     return { message: finalMessage, images };
   }
+  function isBlankConversation(items = messages) {
+    return items.length === 0 || items.every(item => item.kind === 'system');
+  }
+  function chatAgentOptions() {
+    return [...builtinAgents.map(agent => builtinAgentDefaults(agent)), ...agents];
+  }
+  function selectedChatAgent() {
+    const options = chatAgentOptions();
+    return options.find(agent => agent.id === selectedChatAgentId) || options.find(agent => agent.id === 'builtin-main') || options[0];
+  }
+  async function applySelectedChatAgent() {
+    const agent = selectedChatAgent();
+    if (!agent) return;
+    const res = await fetch('/api/agent/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemPrompt: agent.systemPrompt, tools: agent.tools || [] }) });
+    if (!res.ok) throw new Error(await res.text());
+  }
   async function sendPrompt(message: string, streamingBehavior?: 'followUp' | 'steer', renderUser = true, attachments: any[] = []) {
     if (renderUser) setMessages(prev => [...prev, { id: uid('user'), kind: 'user', title: 'You', text: message, attachments }]);
     setBusyState(true);
@@ -296,6 +313,7 @@ function App() {
       setBusyState(false);
       setQueue([]);
       setMessages([SYSTEM_ITEM]);
+      setSelectedChatAgentId('builtin-main');
       setCurrentSessionPath('');
       replaceRoute('/');
       await loadProjects();
@@ -436,6 +454,7 @@ function App() {
     setBusyState(false);
     setQueue([]);
     setMessages([SYSTEM_ITEM]);
+    setSelectedChatAgentId('builtin-main');
     setProgressTracker(null);
     setStatus('ready');
     await loadProjects();
@@ -598,6 +617,7 @@ function App() {
       return;
     }
     try {
+      if (isBlankConversation()) await applySelectedChatAgent();
       await sendPrompt(message, undefined, true, attachments);
     } catch (err: any) { addItem({ kind: 'tool', title: 'Error', text: String(err.message || err), error: true }); setBusyState(false); setTimeout(drainPromptQueue, 0); }
   }
@@ -754,6 +774,9 @@ function App() {
   }, [state, stats]);
 
   const gitPanelVisible = view === 'chat';
+  const resolvedBuiltinAgents = builtinAgents.map(agent => builtinAgentDefaults(agent));
+  const availableChatAgents = [...resolvedBuiltinAgents, ...agents];
+  const emptyChat = isBlankConversation(messages);
   function setDesktopGitPanelHidden(hidden: boolean) {
     setGitPanelHidden(hidden);
     localStorage.setItem('piWebGitPanelHidden', hidden ? 'true' : 'false');
@@ -783,10 +806,10 @@ function App() {
         <div className="flex items-center gap-2"><button type="button" className="hidden rounded-lg bg-gray-100 px-2 py-1 text-gray-700 dark:bg-neutral-900 dark:text-slate-200 max-[820px]:block" onClick={() => setSidebarOpen(true)}>☰</button><h1 className="text-xs font-semibold">{view === 'skills' ? 'Skills' : view === 'tools' ? 'Tools' : 'Agents'}</h1></div>
         <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500"><ThemeToggle value={themePreference} onChange={setThemePreference} /><span>π Pi Web</span></div>
       </header>}
-      {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} />}
+      {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} agentOptions={availableChatAgents} selectedAgentId={selectedChatAgentId} setSelectedAgentId={setSelectedChatAgentId} showAgentPicker={emptyChat} />}
       {view === 'skills' && <SkillsView skills={skills} reload={async () => { await loadSkills(); await loadCommands(); }} openModal={setSkillModal} />}
       {view === 'tools' && <ToolsView tools={[...builtinTools, ...tools]} openModal={setToolModal} saveTools={saveTools} customTools={tools} />}
-      {view === 'agents' && <AgentsView builtinAgents={builtinAgents.map(agent => builtinAgentDefaults(agent))} customAgents={agents} openModal={setAgentModal} saveAgents={saveAgents} />}
+      {view === 'agents' && <AgentsView builtinAgents={resolvedBuiltinAgents} customAgents={agents} openModal={setAgentModal} saveAgents={saveAgents} />}
     </section>
     {gitPanelVisible && (!gitPanelHidden || gitPanelOpen) && <GitPanel status={gitStatus} branches={gitBranches} busy={gitBusy} mobileOpen={gitPanelOpen} closeMobile={() => setGitPanelOpen(false)} hideDesktop={() => setDesktopGitPanelHidden(true)} refresh={loadGitStatus} commit={openCommitModal} push={() => runGitAction('push')} switchBranch={switchGitBranch} init={() => runGitAction('init')} createRepo={() => runGitAction('create-github-repo')} />}
     {commitModalOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={() => setCommitModalOpen(false)}>

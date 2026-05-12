@@ -40,7 +40,7 @@ function ProjectTree({ project, collapsed, icon, currentSessionPath, onToggle, o
     </div>)}
   </div>;
 }
-function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen }: any) {
+function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker }: any) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -174,6 +174,7 @@ function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessa
     </div></main>
     <form ref={formRef} onSubmit={submitPrompt} className="fixed bottom-0 left-[290px] right-0 bg-gradient-to-t from-white via-white px-6 pb-4 pt-3 dark:from-black dark:via-black max-[820px]:left-0"><div className="mx-auto w-full max-w-6xl">
       {progressTracker && <ProgressTrackerPanel tracker={progressTracker} onRemove={removeProgressTracker} />}
+      {showAgentPicker && <BlankConversationAgentPicker agents={agentOptions || []} selectedAgentId={selectedAgentId} setSelectedAgentId={setSelectedAgentId} />}
       {showSuggestions && <div className="mb-2 max-h-64 overflow-auto rounded-2xl border border-gray-200 bg-white p-1.5 shadow-pi dark:border-neutral-800 dark:bg-neutral-950">
         {slashMatches.map((command: any, index: number) => <button key={command.name} type="button" className={'flex w-full items-baseline gap-3 rounded-xl px-3 py-2 text-left hover:bg-[#f2f4ff] dark:hover:bg-neutral-900 ' + (index === selectedSuggestion ? 'bg-[#f2f4ff] dark:bg-neutral-900' : '')} onMouseDown={ev => { ev.preventDefault(); runSuggestion(command); }}>
           <span className="min-w-36 font-bold text-piAccent">/{command.name}</span><span className="truncate text-xs text-gray-500 dark:text-slate-400">{command.description || command.source || ''}</span>
@@ -220,6 +221,19 @@ function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessa
       {terminalOpen && <TerminalPane focusKey={focusKey} onClose={() => setTerminalOpen(false)} />}
     </div></form>
   </>;
+}
+function BlankConversationAgentPicker({ agents, selectedAgentId, setSelectedAgentId }: any) {
+  const selected = agents.find((agent: any) => agent.id === selectedAgentId) || agents[0];
+  if (!selected) return null;
+  return <div className="mb-2 flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white/95 px-3 py-2 text-xs shadow-sm dark:border-neutral-800 dark:bg-neutral-950/95 sm:flex-row sm:items-center">
+    <label className="flex items-center gap-2 font-semibold text-gray-500 dark:text-slate-400">
+      <span>Agent</span>
+      <select className="max-w-48 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-900 outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black dark:text-slate-100" value={selected.id} onChange={event => setSelectedAgentId(event.target.value)}>
+        {agents.map((agent: any) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+      </select>
+    </label>
+    <div className="min-w-0 flex-1 truncate text-gray-400 dark:text-slate-500" title={selected.description || ''}>{selected.description || 'Choose who should answer this conversation.'}</div>
+  </div>;
 }
 function ProgressTrackerPanel({ tracker, onRemove }: any) {
   const tasks = Array.isArray(tracker?.tasks) ? tracker.tasks : [];

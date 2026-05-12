@@ -455,6 +455,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "set_system_prompt", { systemPrompt: session.systemPrompt });
 			}
 
+			case "set_active_tools": {
+				session.setActiveToolsByName(command.tools);
+				return success(id, "set_active_tools", { tools: session.getActiveToolNames() });
+			}
+
 			// =================================================================
 			// Model
 			// =================================================================

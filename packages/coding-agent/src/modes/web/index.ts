@@ -28,6 +28,7 @@ import { RpcBridge } from "./rpc-bridge.js";
 import { deleteWebSkill, listWebSkills, writeWebSkill } from "./skills.js";
 import { TerminalManager, TerminalUnavailableError } from "./terminal.js";
 import type {
+	ApplyAgentRequest,
 	AskQuestionAnswer,
 	AskQuestionRequest,
 	GitBranchSwitchRequest,
@@ -382,6 +383,26 @@ async function startWebServer(options: WebOptions): Promise<void> {
 			await writeMainSystemPromptOverride(mainSystemPromptOverride);
 			const response = await rpc.send({ type: "set_system_prompt", systemPrompt: mainSystemPromptOverride }, 120000);
 			sendJson(res, response, response.success ? 200 : 400);
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/agent/apply") {
+			const body = await readJsonBody<ApplyAgentRequest>(req, 1024 * 1024);
+			const systemPrompt = requireNonEmptyString(body.systemPrompt, "systemPrompt");
+			const tools = Array.isArray(body.tools)
+				? body.tools.filter((tool): tool is string => typeof tool === "string" && tool.trim().length > 0)
+				: [];
+			const toolsResponse = await rpc.send({ type: "set_active_tools", tools }, 120000);
+			if (!toolsResponse.success) {
+				sendJson(res, toolsResponse, 400);
+				return;
+			}
+			const appliedTools = toolsResponse.command === "set_active_tools" ? toolsResponse.data.tools : tools;
+			const promptResponse = await rpc.send({ type: "set_system_prompt", systemPrompt }, 120000);
+			sendJson(
+				res,
+				{ success: promptResponse.success, data: { tools: appliedTools, systemPrompt } },
+				promptResponse.success ? 200 : 400,
+			);
 			return;
 		}
 		if (url.pathname.startsWith("/api/terminal/")) {

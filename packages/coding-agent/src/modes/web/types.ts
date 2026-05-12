@@ -177,6 +177,11 @@ export interface ProgressTrackerRequest {
 	path: string;
 }
 
+export interface ApplyAgentRequest {
+	systemPrompt: string;
+	tools: string[];
+}
+
 export interface GitCommitRequest {
 	message: string;
 }

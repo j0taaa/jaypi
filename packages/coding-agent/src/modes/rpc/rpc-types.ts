@@ -28,6 +28,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_state" }
 	| { id?: string; type: "get_system_prompt" }
 	| { id?: string; type: "set_system_prompt"; systemPrompt: string }
+	| { id?: string; type: "set_active_tools"; tools: string[] }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -122,6 +123,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
 	| { id?: string; type: "response"; command: "get_system_prompt"; success: true; data: { systemPrompt: string } }
 	| { id?: string; type: "response"; command: "set_system_prompt"; success: true; data: { systemPrompt: string } }
+	| { id?: string; type: "response"; command: "set_active_tools"; success: true; data: { tools: string[] } }
 
 	// Model
 	| {
