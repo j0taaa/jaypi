@@ -30,6 +30,7 @@ import { TerminalManager, TerminalUnavailableError } from "./terminal.js";
 import type {
 	AskQuestionAnswer,
 	AskQuestionRequest,
+	GitBranchSwitchRequest,
 	GitCommitRequest,
 	ProgressTrackerRequest,
 	PromptRequest,
@@ -448,9 +449,18 @@ async function startWebServer(options: WebOptions): Promise<void> {
 			sendJson(res, { success: true, data: await gitProjectManager.status(activeCwd) });
 			return;
 		}
+		if (req.method === "GET" && url.pathname === "/api/git/branches") {
+			sendJson(res, { success: true, data: await gitProjectManager.branches(activeCwd) });
+			return;
+		}
 		if (req.method === "POST" && url.pathname === "/api/git/commit") {
 			const body = await readJsonBody<GitCommitRequest>(req, 64 * 1024);
 			sendJson(res, { success: true, data: await gitProjectManager.commit(activeCwd, body.message) });
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/git/switch-branch") {
+			const body = await readJsonBody<GitBranchSwitchRequest>(req, 64 * 1024);
+			sendJson(res, { success: true, data: await gitProjectManager.switchBranch(activeCwd, body.branch) });
 			return;
 		}
 		if (req.method === "POST" && url.pathname === "/api/git/push") {

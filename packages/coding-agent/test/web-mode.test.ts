@@ -308,6 +308,37 @@ describe("git project manager", () => {
 		await manager.push(cwd);
 		expect(git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])).toBe(`origin/${branch}`);
 	});
+
+	test("lists and switches local and remote branches", async () => {
+		const cwd = await tempDir();
+		const remote = await tempDir();
+		git(remote, ["init", "--bare"]);
+		git(cwd, ["init"]);
+		configureGit(cwd);
+		await fsp.writeFile(path.join(cwd, "tracked.txt"), "initial\n", "utf8");
+		git(cwd, ["add", "tracked.txt"]);
+		git(cwd, ["commit", "-m", "initial"]);
+		const initialBranch = git(cwd, ["branch", "--show-current"]);
+		git(cwd, ["branch", "local-feature"]);
+		git(cwd, ["remote", "add", "origin", remote]);
+		git(cwd, ["push", "origin", `${initialBranch}:remote-feature`]);
+		git(cwd, ["fetch", "origin"]);
+		const manager = new GitProjectManager(vi.fn());
+		const branches = await manager.branches(cwd);
+		expect(branches.map((branch) => branch.name)).not.toContain("origin");
+		expect(branches).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ name: initialBranch, local: true }),
+				expect.objectContaining({ name: "local-feature", local: true, remote: false }),
+				expect.objectContaining({ name: "remote-feature", local: false, remote: true }),
+			]),
+		);
+		await manager.switchBranch(cwd, "local-feature");
+		expect(git(cwd, ["branch", "--show-current"])).toBe("local-feature");
+		await manager.switchBranch(cwd, "remote-feature");
+		expect(git(cwd, ["branch", "--show-current"])).toBe("remote-feature");
+		expect(git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])).toBe("origin/remote-feature");
+	});
 });
 
 describe("terminal manager", () => {

@@ -35,6 +35,13 @@ type GitProjectStatus = {
   error: string | null;
 };
 
+type GitBranchInfo = {
+  name: string;
+  current: boolean;
+  local: boolean;
+  remote: boolean;
+};
+
 type ChatItem = {
   id: string;
   kind: 'system' | 'user' | 'assistant' | 'tool' | 'thinking' | 'question';
@@ -119,6 +126,7 @@ function App() {
   const [stats, setStats] = useState<any>(null);
   const [progressTracker, setProgressTracker] = useState<any>(null);
   const [gitStatus, setGitStatus] = useState<GitProjectStatus | null>(null);
+  const [gitBranches, setGitBranches] = useState<GitBranchInfo[]>([]);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [gitPanelHidden, setGitPanelHidden] = useState(() => localStorage.getItem('piWebGitPanelHidden') === 'true');
   const [gitBusy, setGitBusy] = useState('');
@@ -367,6 +375,7 @@ function App() {
   }
   async function loadGitStatus() {
     try { const json = await (await fetch('/api/git/status')).json(); setGitStatus(json.data || null); } catch { setGitStatus(null); }
+    try { const json = await (await fetch('/api/git/branches')).json(); setGitBranches(json.data || []); } catch { setGitBranches([]); }
   }
   async function loadModels() {
     try { const json = await (await fetch('/api/models')).json(); setModels(json.data?.models || []); } catch { setModels([]); }
@@ -634,6 +643,7 @@ function App() {
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json().catch(() => null);
       setGitStatus(json?.data || null);
+      await loadGitStatus();
     } catch (err: any) {
       addItem({ kind: 'tool', title: 'Git ' + action + ' failed', text: String(err.message || err), error: true });
       await loadGitStatus();
@@ -651,6 +661,10 @@ function App() {
     if (!message) return;
     setCommitModalOpen(false);
     await runGitAction('commit', { message });
+  }
+  async function switchGitBranch(branch: string) {
+    await runGitAction('switch-branch', { branch });
+    await loadProjects();
   }
   async function deleteConversation(session: SessionInfo) {
     if (!confirm('Delete this conversation? This cannot be undone.')) return;
@@ -763,7 +777,7 @@ function App() {
       {view === 'tools' && <ToolsView tools={[...builtinTools, ...tools]} openModal={setToolModal} saveTools={saveTools} customTools={tools} />}
       {view === 'agents' && <AgentsView builtinAgents={builtinAgents.map(agent => ({ ...agent, systemPrompt: mainSystemPrompt, skills: skills.filter((skill: any) => skill.name !== 'ask-question' && skill.name !== 'progress-tracker').map((skill: any) => skill.name), tools: [...builtinTools, ...tools].map((tool: any) => tool.name), ...(builtinAgentOverrides[agent.id] || {}) }))} customAgents={agents} openModal={setAgentModal} saveAgents={saveAgents} />}
     </section>
-    {gitPanelVisible && (!gitPanelHidden || gitPanelOpen) && <GitPanel status={gitStatus} busy={gitBusy} mobileOpen={gitPanelOpen} closeMobile={() => setGitPanelOpen(false)} hideDesktop={() => setDesktopGitPanelHidden(true)} refresh={loadGitStatus} commit={openCommitModal} push={() => runGitAction('push')} init={() => runGitAction('init')} createRepo={() => runGitAction('create-github-repo')} />}
+    {gitPanelVisible && (!gitPanelHidden || gitPanelOpen) && <GitPanel status={gitStatus} branches={gitBranches} busy={gitBusy} mobileOpen={gitPanelOpen} closeMobile={() => setGitPanelOpen(false)} hideDesktop={() => setDesktopGitPanelHidden(true)} refresh={loadGitStatus} commit={openCommitModal} push={() => runGitAction('push')} switchBranch={switchGitBranch} init={() => runGitAction('init')} createRepo={() => runGitAction('create-github-repo')} />}
     {commitModalOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={() => setCommitModalOpen(false)}>
       <form className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-4 shadow-pi dark:border-neutral-800 dark:bg-neutral-950" onClick={ev => ev.stopPropagation()} onSubmit={confirmCommit}>
         <div className="mb-3 text-xs font-bold text-gray-900 dark:text-slate-100">Commit changes</div>
@@ -824,6 +838,7 @@ function ThemeToggle({ value, onChange }: { value: ThemePreference; onChange: (v
 
 type GitPanelProps = {
   status: GitProjectStatus | null;
+  branches: GitBranchInfo[];
   busy: string;
   mobileOpen: boolean;
   closeMobile(): void;
@@ -831,13 +846,15 @@ type GitPanelProps = {
   refresh(): void;
   commit(): void;
   push(): void;
+  switchBranch(branch: string): void;
   init(): void;
   createRepo(): void;
 };
 
-function GitPanel({ status, busy, mobileOpen, closeMobile, hideDesktop, refresh, commit, push, init, createRepo }: GitPanelProps) {
+function GitPanel({ status, branches, busy, mobileOpen, closeMobile, hideDesktop, refresh, commit, push, switchBranch, init, createRepo }: GitPanelProps) {
   const lines = status?.changedLines || { added: 0, deleted: 0, total: 0 };
   const checkpoint = status?.lastCheckpointAt ? new Date(status.lastCheckpointAt).toLocaleTimeString() : 'none';
+  const branchOptions = branches.length > 0 ? branches : (status?.branch ? [{ name: status.branch, current: true, local: true, remote: false }] : []);
   const panelClass = 'fixed right-4 top-16 z-20 max-h-[calc(100vh-5rem)] w-[280px] overflow-y-auto rounded-2xl border border-gray-200 bg-white/95 p-4 shadow-pi backdrop-blur dark:border-neutral-900 dark:bg-black/95 max-[1099px]:inset-0 max-[1099px]:z-50 max-[1099px]:h-screen max-[1099px]:max-h-none max-[1099px]:w-full max-[1099px]:rounded-none max-[1099px]:border-0 ' + (mobileOpen ? 'max-[1099px]:block' : 'max-[1099px]:hidden');
   const buttonClass = 'rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 dark:bg-slate-100 dark:text-black';
   const secondaryClass = 'rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-50 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-neutral-800';
@@ -856,7 +873,10 @@ function GitPanel({ status, busy, mobileOpen, closeMobile, hideDesktop, refresh,
       </div>
       <div className="space-y-1 text-xs text-gray-500 dark:text-slate-400">
         <div>Repo: <span className="font-medium text-gray-800 dark:text-slate-200">{status.isRepo ? 'ready' : 'not initialized'}</span></div>
-        <div>Branch: <span className="font-medium text-gray-800 dark:text-slate-200">{status.branch || 'none'}</span></div>
+        <label className="block">Branch<select className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-800 outline-none disabled:opacity-50 dark:border-neutral-800 dark:bg-black dark:text-slate-200" value={status.branch || ''} disabled={disabled || !status.isRepo || branchOptions.length === 0} onChange={ev => switchBranch(ev.target.value)}>
+          {!status.branch && <option value="">none</option>}
+          {branchOptions.map(branch => <option key={branch.name} value={branch.name}>{branch.name}{branch.local ? '' : ' (remote)'}</option>)}
+        </select></label>
         <div>Upstream: <span className="font-medium text-gray-800 dark:text-slate-200">{status.upstream || 'none'}</span></div>
         <div>GitHub: <span className="font-medium text-gray-800 dark:text-slate-200">{status.githubReady ? 'ready' : status.ghLoggedIn ? 'needs repo' : 'login needed'}</span></div>
         <div>Checkpoint: <span className="font-medium text-gray-800 dark:text-slate-200">{checkpoint}</span></div>

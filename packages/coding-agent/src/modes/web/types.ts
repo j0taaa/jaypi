@@ -85,6 +85,13 @@ export interface GitProjectStatus {
 	error: string | null;
 }
 
+export interface GitBranchInfo {
+	name: string;
+	current: boolean;
+	local: boolean;
+	remote: boolean;
+}
+
 export type WebEvent =
 	| Record<string, unknown>
 	| {
@@ -172,6 +179,10 @@ export interface ProgressTrackerRequest {
 
 export interface GitCommitRequest {
 	message: string;
+}
+
+export interface GitBranchSwitchRequest {
+	branch: string;
 }
 
 export interface AskQuestionAnswer {

@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import { HttpError } from "./http.js";
-import type { Broadcast, GitChangedLines, GitProjectStatus } from "./types.js";
+import type { Broadcast, GitBranchInfo, GitChangedLines, GitProjectStatus } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -131,6 +131,39 @@ export class GitProjectManager {
 		return this.broadcastStatus(status.cwd);
 	}
 
+	async branches(cwd: string): Promise<GitBranchInfo[]> {
+		const status = await this.status(cwd);
+		if (!status.isRepo) return [];
+		const local = await this.refNames(status.cwd, "refs/heads");
+		const remote = (await this.refNames(status.cwd, "refs/remotes/origin"))
+			.filter((name) => name !== "origin" && name !== "origin/HEAD")
+			.map((name) => name.replace(/^origin\//, ""))
+			.filter((name) => name && name !== "HEAD");
+		const names = [...new Set([...local, ...remote])].sort((a, b) => a.localeCompare(b));
+		return names.map((name) => ({
+			name,
+			current: name === status.branch,
+			local: local.includes(name),
+			remote: remote.includes(name),
+		}));
+	}
+
+	async switchBranch(cwd: string, branch: string): Promise<GitProjectStatus> {
+		const branchName = String(branch || "").trim();
+		if (!branchName) throw new HttpError(400, "Missing branch");
+		const status = await this.status(cwd);
+		if (!status.isRepo) throw new HttpError(400, "Project is not a git repository");
+		await this.git(status.cwd, ["check-ref-format", "--branch", branchName]);
+		if (await this.refExists(status.cwd, `refs/heads/${branchName}`)) {
+			await this.git(status.cwd, ["switch", branchName]);
+		} else if (await this.refExists(status.cwd, `refs/remotes/origin/${branchName}`)) {
+			await this.git(status.cwd, ["switch", "--track", "-c", branchName, `origin/${branchName}`]);
+		} else {
+			throw new HttpError(404, `Branch not found: ${branchName}`);
+		}
+		return this.broadcastStatus(status.cwd);
+	}
+
 	async init(cwd: string): Promise<GitProjectStatus> {
 		const resolvedCwd = path.resolve(cwd);
 		await this.git(resolvedCwd, ["init"]);
@@ -176,6 +209,18 @@ export class GitProjectManager {
 			lines += data.toString("utf8").split(/\r?\n/).length;
 		}
 		return lines;
+	}
+
+	private async refNames(cwd: string, prefix: string): Promise<string[]> {
+		const output = (await this.git(cwd, ["for-each-ref", "--format=%(refname:short)", prefix])).stdout;
+		return output
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.filter(Boolean);
+	}
+
+	private async refExists(cwd: string, ref: string): Promise<boolean> {
+		return this.commandOk("git", ["show-ref", "--verify", "--quiet", ref], cwd);
 	}
 
 	private checkpointFields(cwd: string): Pick<GitProjectStatus, "lastCheckpointAt" | "lastCheckpointRef"> {
