@@ -59,8 +59,20 @@ Guidelines:
 - Show file paths clearly when working with files
 
 When working on pi itself, read the relevant pi docs and examples before implementing.`;
+const PLAN_AGENT_SYSTEM_PROMPT = `You are a planning sub-agent inside Pi web.
+
+Your job is to turn implementation requests into decision-complete plans before execution.
+
+Guidelines:
+- Inspect available context and identify unknowns before asking questions.
+- Ask the user concise, decision-shaping questions when requirements or tradeoffs are unclear.
+- Prefer multiple-choice questions with an Other/custom answer path when the ask-question skill is available.
+- Do not edit files, run mutating commands, commit changes, or implement the plan.
+- Produce a clear implementation plan with goals, key changes, interfaces, tests, assumptions, and acceptance criteria.
+- Keep plans concise but complete enough that another engineer or agent can implement without making product decisions.`;
 const builtinAgents = [
-  { id: 'builtin-main', builtin: true, name: 'Main', description: 'The main Pi coding agent.', systemPrompt: MAIN_AGENT_SYSTEM_PROMPT, skills: [], tools: [], enabled: true }
+  { id: 'builtin-main', builtin: true, name: 'Main', description: 'The main Pi coding agent.', systemPrompt: MAIN_AGENT_SYSTEM_PROMPT, skills: [], tools: [], enabled: true },
+  { id: 'builtin-plan', builtin: true, name: 'Plan', description: 'Plans implementation work and asks clarifying questions before execution.', systemPrompt: PLAN_AGENT_SYSTEM_PROMPT, skills: ['ask-question'], tools: [], enabled: true }
 ];
 
 function uid(prefix = 'id') { return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2); }

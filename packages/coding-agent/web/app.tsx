@@ -725,13 +725,24 @@ function App() {
   function saveTools(next: any[]) { setTools(next); localStorage.setItem('piWebCustomTools', JSON.stringify(next)); }
   function saveAgents(next: any[]) { setAgents(next); localStorage.setItem('piWebCustomAgents', JSON.stringify(next)); }
   async function saveBuiltinAgent(agent: any) {
-    const res = await fetch('/api/system-prompt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemPrompt: agent.systemPrompt }) });
-    if (!res.ok) { alert(await res.text()); return; }
-    const json = await res.json().catch(() => null);
-    setMainSystemPrompt(json?.data?.systemPrompt || agent.systemPrompt);
-    const next = { ...builtinAgentOverrides, [agent.id]: { ...agent, systemPrompt: json?.data?.systemPrompt || agent.systemPrompt } };
+    let savedAgent = agent;
+    if (agent.id === 'builtin-main') {
+      const res = await fetch('/api/system-prompt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemPrompt: agent.systemPrompt }) });
+      if (!res.ok) { alert(await res.text()); return; }
+      const json = await res.json().catch(() => null);
+      const systemPrompt = json?.data?.systemPrompt || agent.systemPrompt;
+      setMainSystemPrompt(systemPrompt);
+      savedAgent = { ...agent, systemPrompt };
+    }
+    const next = { ...builtinAgentOverrides, [agent.id]: savedAgent };
     setBuiltinAgentOverrides(next);
     localStorage.setItem('piWebBuiltinAgentOverrides', JSON.stringify(next));
+  }
+  function builtinAgentDefaults(agent: any) {
+    const defaults = agent.id === 'builtin-main'
+      ? { ...agent, systemPrompt: mainSystemPrompt, skills: skills.filter((skill: any) => skill.name !== 'ask-question' && skill.name !== 'progress-tracker').map((skill: any) => skill.name), tools: [...builtinTools, ...tools].map((tool: any) => tool.name) }
+      : agent;
+    return { ...defaults, ...(builtinAgentOverrides[agent.id] || {}) };
   }
 
   const contextText = useMemo(() => {
@@ -775,7 +786,7 @@ function App() {
       {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} />}
       {view === 'skills' && <SkillsView skills={skills} reload={async () => { await loadSkills(); await loadCommands(); }} openModal={setSkillModal} />}
       {view === 'tools' && <ToolsView tools={[...builtinTools, ...tools]} openModal={setToolModal} saveTools={saveTools} customTools={tools} />}
-      {view === 'agents' && <AgentsView builtinAgents={builtinAgents.map(agent => ({ ...agent, systemPrompt: mainSystemPrompt, skills: skills.filter((skill: any) => skill.name !== 'ask-question' && skill.name !== 'progress-tracker').map((skill: any) => skill.name), tools: [...builtinTools, ...tools].map((tool: any) => tool.name), ...(builtinAgentOverrides[agent.id] || {}) }))} customAgents={agents} openModal={setAgentModal} saveAgents={saveAgents} />}
+      {view === 'agents' && <AgentsView builtinAgents={builtinAgents.map(agent => builtinAgentDefaults(agent))} customAgents={agents} openModal={setAgentModal} saveAgents={saveAgents} />}
     </section>
     {gitPanelVisible && (!gitPanelHidden || gitPanelOpen) && <GitPanel status={gitStatus} branches={gitBranches} busy={gitBusy} mobileOpen={gitPanelOpen} closeMobile={() => setGitPanelOpen(false)} hideDesktop={() => setDesktopGitPanelHidden(true)} refresh={loadGitStatus} commit={openCommitModal} push={() => runGitAction('push')} switchBranch={switchGitBranch} init={() => runGitAction('init')} createRepo={() => runGitAction('create-github-repo')} />}
     {commitModalOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={() => setCommitModalOpen(false)}>
