@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added PWA metadata and a service worker to the Pi web interface so it can be installed and load its shell offline.
+
 ## [0.73.0] - 2026-05-04
 
 ### New Features

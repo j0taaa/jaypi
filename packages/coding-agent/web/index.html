@@ -3,8 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#6d5dfc" />
+  <meta name="application-name" content="Pi Web" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Pi Web" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <title>Pi Web</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/@xterm/xterm@5.5.0/css/xterm.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -85,5 +91,12 @@
   <script type="text/babel" data-presets="typescript" src="/web/shared.ts"></script>
   <script type="text/babel" data-presets="typescript,react" src="/web/components.tsx"></script>
   <script type="text/babel" data-presets="typescript,react" data-type="module" src="/web/app.tsx"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/service-worker.js').catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>

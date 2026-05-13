@@ -1,0 +1,18 @@
+{
+  "name": "Pi Web",
+  "short_name": "Pi",
+  "description": "Pi coding agent web interface",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6d5dfc",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

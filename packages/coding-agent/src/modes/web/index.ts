@@ -203,6 +203,11 @@ async function startWebServer(options: WebOptions): Promise<void> {
 			);
 			return;
 		}
+		if (url.pathname === "/manifest.webmanifest" || url.pathname === "/service-worker.js") {
+			const served = await sendStaticFile(res, webRoot, url.pathname);
+			if (!served) throw new HttpError(404, "Not found");
+			return;
+		}
 		if (url.pathname.startsWith("/web/")) {
 			const served = await sendStaticFile(res, webRoot, url.pathname.slice("/web/".length));
 			if (!served) throw new HttpError(404, "Not found");

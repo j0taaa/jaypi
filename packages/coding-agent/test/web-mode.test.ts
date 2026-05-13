@@ -10,7 +10,7 @@ import { ENV_AGENT_DIR } from "../src/config.js";
 import { assertHostAllowed, isLoopbackHost, parseWebArgs } from "../src/modes/web/args.js";
 import { assertAuthorized, assertSafeOrigin, requestHasToken, tokenCookie } from "../src/modes/web/auth.js";
 import { GitProjectManager, parseNumstat } from "../src/modes/web/git-project.js";
-import { HttpError, readJsonBody, sendStaticFile } from "../src/modes/web/http.js";
+import { contentTypeFor, HttpError, readJsonBody, sendStaticFile } from "../src/modes/web/http.js";
 import {
 	ProgressTrackerManager,
 	parseProgressTrackerMarkdown,
@@ -120,6 +120,10 @@ describe("web auth", () => {
 });
 
 describe("web http", () => {
+	test("serves web app manifest with installable content type", () => {
+		expect(contentTypeFor("manifest.webmanifest")).toBe("application/manifest+json; charset=utf-8");
+	});
+
 	test("rejects oversized JSON bodies", async () => {
 		await expect(readJsonBody(request('{"ok":true}'), 4)).rejects.toMatchObject({ status: 413 });
 	});
