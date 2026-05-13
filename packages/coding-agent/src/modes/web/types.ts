@@ -117,7 +117,7 @@ export type WebEvent =
 			type: "ask_question";
 			id: string;
 			question: string;
-			options: string[];
+			options: AskQuestionOption[];
 	  }
 	| ({
 			type: "progress_tracker";
@@ -189,7 +189,13 @@ export interface SkillWriteRequest {
 
 export interface AskQuestionRequest {
 	question: string;
-	options: string[];
+	options: Array<string | AskQuestionOption>;
+}
+
+export interface AskQuestionOption {
+	label: string;
+	image?: string;
+	description?: string;
 }
 
 export interface ProgressTrackerRequest {

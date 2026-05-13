@@ -16,6 +16,21 @@ When `Current Pi web server URL` is present in the system prompt, ask through Pi
 }
 ```
 
+Options may also include images. Use this when asking the user to compare visual designs, screenshots, mockups, diagrams, or generated images:
+
+```json
+{
+  "question": "Which design direction should I continue with?",
+  "options": [
+    { "label": "Design A", "image": "/absolute/path/to/design-a.png", "description": "Cleaner navigation" },
+    { "label": "Design B", "image": "https://example.com/design-b.png", "description": "Stronger visual hierarchy" },
+    "Other"
+  ]
+}
+```
+
+The `image` value may be an HTTP URL, data image URL, absolute local file path, `file://` URL, or path relative to the current working directory.
+
 Use a portable shell command like:
 
 ```sh

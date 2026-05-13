@@ -32,6 +32,7 @@ import type {
 	AgentRegistrySyncRequest,
 	ApplyAgentRequest,
 	AskQuestionAnswer,
+	AskQuestionOption,
 	AskQuestionRequest,
 	GitBranchSwitchRequest,
 	GitCommitRequest,
@@ -61,7 +62,7 @@ interface PendingQuestion {
 	resolve: (answer: AskQuestionAnswer) => void;
 	reject: (error: Error) => void;
 	timeout: ReturnType<typeof setTimeout>;
-	options: string[];
+	options: AskQuestionOption[];
 }
 
 export { assertHostAllowed, isLoopbackHost, parseWebArgs } from "./args.js";
@@ -538,7 +539,7 @@ async function startWebServer(options: WebOptions): Promise<void> {
 	function askQuestion(input: AskQuestionRequest): Promise<AskQuestionAnswer> {
 		const question = requireNonEmptyString(input.question, "question");
 		if (!Array.isArray(input.options)) throw new HttpError(400, "Missing options");
-		const options = input.options.map((option) => String(option || "").trim()).filter(Boolean);
+		const options = input.options.map(normalizeQuestionOption).filter((option) => option.label);
 		if (options.length === 0) throw new HttpError(400, "Missing options");
 		if (options.length > 12) throw new HttpError(400, "Too many options");
 		const id = crypto.randomUUID();
@@ -785,7 +786,19 @@ function textResponse(command: string, text: string): WebRpcResponse {
 	return { type: "response", command, success: true, data: { text } } as WebRpcResponse;
 }
 
-function normalizeQuestionAnswer(answer: AskQuestionAnswer, options: string[]): AskQuestionAnswer {
+function normalizeQuestionOption(option: string | AskQuestionOption): AskQuestionOption {
+	if (typeof option === "string") return { label: option.trim() };
+	const label = String(option?.label || "").trim();
+	const image = String(option?.image || "").trim();
+	const description = String(option?.description || "").trim();
+	return {
+		label,
+		...(image ? { image } : {}),
+		...(description ? { description } : {}),
+	};
+}
+
+function normalizeQuestionAnswer(answer: AskQuestionAnswer, options: AskQuestionOption[]): AskQuestionAnswer {
 	if (answer.custom) {
 		const customAnswer = String(answer.answer || "").trim();
 		if (!customAnswer) throw new HttpError(400, "Missing custom answer");
@@ -795,7 +808,7 @@ function normalizeQuestionAnswer(answer: AskQuestionAnswer, options: string[]): 
 	if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= options.length) {
 		throw new HttpError(400, "Invalid optionIndex");
 	}
-	return { answer: options[optionIndex], optionIndex, custom: false };
+	return { answer: options[optionIndex]?.label || "", optionIndex, custom: false };
 }
 
 function askQuestionEndpointUrl(host: string, port: number, token: string): string {

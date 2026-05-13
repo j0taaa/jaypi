@@ -453,7 +453,7 @@ function Message({ item, answerQuestion, cwd }: { item: ChatItem; answerQuestion
   if (item.kind === 'user') return <div className="ml-auto max-w-[74%]"><div className="ml-auto w-fit whitespace-pre-wrap rounded-2xl bg-black px-4 py-3 text-sm text-white dark:bg-slate-100 dark:text-black">{item.text}</div>{item.attachments?.length > 0 && <div className="mt-2 flex justify-end"><AttachmentPreview files={item.attachments} /></div>}{item.images?.length > 0 && <div className="mt-2 flex justify-end"><RenderedImages images={item.images} /></div>}</div>;
   if (item.kind === 'assistant') return <div className="py-2 text-sm leading-6 text-[#202124] dark:text-slate-100"><RichText text={item.text} images={item.images} cwd={cwd} />{item.running && <span className="ml-1 animate-pulse">●</span>}</div>;
   if (item.kind === 'system') return <div className="rounded-xl bg-[#fff7df] px-4 py-3 text-xs text-[#6b5b1a] dark:bg-amber-400/10 dark:text-amber-200"><div className="mb-1 text-[11px] font-bold uppercase">{item.title}</div>{item.text}</div>;
-  if (item.kind === 'question') return <QuestionBlock item={item} answerQuestion={answerQuestion} />;
+  if (item.kind === 'question') return <QuestionBlock item={item} answerQuestion={answerQuestion} cwd={cwd} />;
   if (item.kind === 'thinking') return <details className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:border-neutral-800 dark:bg-neutral-950 dark:text-slate-400" open={!!item.running}><summary className="cursor-pointer font-medium">{item.running ? '◌ ' : '✓ '}Thinking</summary><pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap text-[11px]">{item.text}</pre></details>;
   if (item.toolName === 'bash') return <BashToolBlock item={item} />;
   if (item.toolName === 'read') return <ReadToolBlock item={item} />;
@@ -461,19 +461,23 @@ function Message({ item, answerQuestion, cwd }: { item: ChatItem; answerQuestion
   if (item.toolName === 'write') return <WriteToolBlock item={item} />;
   return <GenericToolBlock item={item} />;
 }
-function QuestionBlock({ item, answerQuestion }: { item: ChatItem; answerQuestion?: (request: any, answer: any) => void }) {
+function normalizeQuestionOption(option: any) {
+  if (typeof option === 'string') return { label: option.trim(), image: '', description: '' };
+  return { label: String(option?.label || '').trim(), image: String(option?.image || '').trim(), description: String(option?.description || '').trim() };
+}
+function QuestionBlock({ item, answerQuestion, cwd }: { item: ChatItem; answerQuestion?: (request: any, answer: any) => void; cwd?: string }) {
   const [customAnswer, setCustomAnswer] = useState('');
   const customInputRef = useRef<HTMLInputElement | null>(null);
   const request = item.args?.request || { id: item.id, question: item.text, options: item.args?.options || [] };
-  const options = item.args?.options || request.options || [];
+  const options = (item.args?.options || request.options || []).map(normalizeQuestionOption).filter((option: any) => option.label);
   const answer = item.args?.answer;
   const answered = !!answer || !item.running;
-  function selectOption(option: string, index: number) {
-    if (option.trim().toLowerCase() === 'other') {
+  function selectOption(option: { label: string }, index: number) {
+    if (option.label.trim().toLowerCase() === 'other') {
       customInputRef.current?.focus();
       return;
     }
-    answerQuestion?.(request, { answer: option, optionIndex: index, custom: false });
+    answerQuestion?.(request, { answer: option.label, optionIndex: index, custom: false });
   }
   function submitCustomAnswer() {
     const answer = customAnswer.trim();
@@ -484,7 +488,14 @@ function QuestionBlock({ item, answerQuestion }: { item: ChatItem; answerQuestio
     <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-piAccent"><span>{answered ? 'Answered question' : 'Question'}</span>{item.running && <span className="animate-pulse rounded-full bg-piAccent/10 px-2 py-0.5 normal-case">waiting</span>}</div>
     <div className="whitespace-pre-wrap text-sm leading-6">{item.text}</div>
     {answer ? <div className="mt-3 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-black"><div className="text-xs font-semibold uppercase text-gray-400 dark:text-slate-500">Answer</div><div className="mt-1 whitespace-pre-wrap">{answer.answer}</div></div> : <div className="mt-3 space-y-3">
-      <div className="grid gap-2">{options.map((option: string, index: number) => <button key={index} type="button" className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-left font-medium hover:border-piAccent hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-800 dark:bg-black dark:hover:bg-neutral-900" disabled={!item.running || !answerQuestion} onClick={() => selectOption(option, index)}>{option}</button>)}</div>
+      <div className="grid gap-2 sm:grid-cols-2">{options.map((option: any, index: number) => {
+        const imageSrc = option.image ? imageUrlFromReference(option.image, cwd) : '';
+        return <button key={index} type="button" className={'overflow-hidden rounded-xl border border-gray-200 bg-white text-left font-medium hover:border-piAccent hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-800 dark:bg-black dark:hover:bg-neutral-900 ' + (imageSrc ? 'p-2' : 'px-4 py-3')} disabled={!item.running || !answerQuestion} onClick={() => selectOption(option, index)}>
+          {imageSrc && <img src={imageSrc} alt={option.label} className="mb-2 h-44 w-full rounded-lg bg-gray-100 object-contain dark:bg-neutral-950" loading="lazy" />}
+          <span className="block px-2 py-1">{option.label}</span>
+          {option.description && <span className="block px-2 pb-1 text-xs font-normal leading-5 text-gray-500 dark:text-slate-400">{option.description}</span>}
+        </button>;
+      })}</div>
       <div className="flex flex-col gap-2 sm:flex-row"><input ref={customInputRef} className="min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 py-2 outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" value={customAnswer} onChange={e => setCustomAnswer(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitCustomAnswer(); } }} placeholder="Other" disabled={!item.running} /><button type="button" className="rounded-xl bg-piAccent px-4 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!item.running || !customAnswer.trim() || !answerQuestion} onClick={submitCustomAnswer}>Send</button></div>
     </div>}
   </div>;
