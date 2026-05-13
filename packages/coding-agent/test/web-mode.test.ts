@@ -160,6 +160,13 @@ describe("web skills", () => {
 			"---\nname: progress-tracker\ndescription: Track progress\n---\n# Progress Tracker\n",
 			"utf8",
 		);
+		const restartSkillDir = path.join(sourceBuiltinsRoot, "restart-pi-web");
+		await fsp.mkdir(restartSkillDir, { recursive: true });
+		await fsp.writeFile(
+			path.join(restartSkillDir, "SKILL.md"),
+			"---\nname: restart-pi-web\ndescription: Restart Pi web\n---\n# Restart Pi Web\n",
+			"utf8",
+		);
 		const subagentSkillDir = path.join(sourceBuiltinsRoot, "subagent-session");
 		await fsp.mkdir(subagentSkillDir, { recursive: true });
 		await fsp.writeFile(
@@ -171,6 +178,7 @@ describe("web skills", () => {
 		expect(skills.map((skill) => skill.name)).toEqual([
 			"ask-question",
 			"progress-tracker",
+			"restart-pi-web",
 			"show-images",
 			"subagent-session",
 		]);
