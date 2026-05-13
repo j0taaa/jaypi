@@ -60,7 +60,6 @@ declare const React: any;
 declare const ReactDOM: any;
 
 const {
-  SYSTEM_ITEM,
   builtinTools,
   MAIN_AGENT_SYSTEM_PROMPT,
   builtinAgents,
@@ -117,7 +116,7 @@ function App() {
   const [projectIcons, setProjectIcons] = useState<Record<string, string>>(() => safeJson(localStorage.getItem('piWebProjectIcons'), {}));
   const [projectQuery, setProjectQuery] = useState('');
   const [currentSessionPath, setCurrentSessionPath] = useState('');
-  const [messages, setMessages] = useState<ChatItem[]>([SYSTEM_ITEM]);
+  const [messages, setMessages] = useState<ChatItem[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [queuedPrompts, setQueuedPrompts] = useState<any[]>(() => safeJson(localStorage.getItem('piWebQueuedPrompts'), []));
@@ -335,7 +334,7 @@ function App() {
       drainingQueueRef.current = false;
       setBusyState(false);
       setQueue([]);
-      setMessages([SYSTEM_ITEM]);
+      setMessages([]);
       setSelectedChatAgentId('builtin-main');
       setCurrentSessionPath('');
       replaceRoute('/');
@@ -486,7 +485,7 @@ function App() {
     drainingQueueRef.current = false;
     setBusyState(false);
     setQueue([]);
-    setMessages([SYSTEM_ITEM]);
+    setMessages([]);
     setSelectedChatAgentId('builtin-main');
     setProgressTracker(null);
     setStatus('ready');
@@ -617,7 +616,7 @@ function App() {
     return String(name || 'tool');
   }
   function renderStoredMessages(raw: any[]): ChatItem[] {
-    const result: ChatItem[] = [SYSTEM_ITEM];
+    const result: ChatItem[] = [];
     const toolResults = new Map<string, any>();
     for (const msg of raw) if (msg.role === 'toolResult') toolResults.set(msg.toolCallId, msg);
     for (const msg of raw) {
@@ -774,7 +773,7 @@ function App() {
   async function openProject() {
     const res = await fetch('/api/open-project', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cwd: folderPath }) });
     if (!res.ok) { alert(await res.text()); return; }
-    setFolderOpen(false); replaceRoute('/'); setMessages([SYSTEM_ITEM]); await loadProjects(); await loadState();
+    setFolderOpen(false); replaceRoute('/'); setMessages([]); await loadProjects(); await loadState();
   }
   async function saveSkill(data: any) {
     const editing = !!data.path;

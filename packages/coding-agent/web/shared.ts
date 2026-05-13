@@ -33,13 +33,6 @@ type ViewName = 'chat' | 'agents' | 'skills' | 'tools';
 const React = (window as any).React;
 const { useEffect, useMemo, useRef, useState } = React;
 
-const SYSTEM_ITEM: ChatItem = {
-  id: 'system-ready',
-  kind: 'system',
-  title: 'System',
-  text: 'Pi web UI is ready. It talks to a headless pi --mode rpc process.'
-};
-
 const builtinTools = [
   { name: 'read', builtin: true, description: 'Read text files and images from the current machine.', content: 'Input: { path: string, offset?: number, limit?: number }\n\nReads file contents for inspection.' },
   { name: 'bash', builtin: true, description: 'Execute shell commands in the current working directory.', content: 'Input: { command: string, timeout?: number }\n\nRuns bash commands for listing files, tests, builds, grep/ripgrep, and other development tasks.' },
@@ -132,7 +125,6 @@ function routeInfo(pathname = location.pathname) {
 function formatK(n: number) { return n >= 1000 ? Math.round(n / 1000) + 'k' : String(n); }
 
 (window as any).PiWebShared = {
-  SYSTEM_ITEM,
   builtinTools,
   MAIN_AGENT_SYSTEM_PROMPT,
   builtinAgents,
