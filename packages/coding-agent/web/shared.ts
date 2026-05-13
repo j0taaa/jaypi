@@ -63,9 +63,19 @@ Guidelines:
 - Do not edit files, run mutating commands, commit changes, or implement the plan.
 - Produce a clear implementation plan with goals, key changes, interfaces, tests, assumptions, and acceptance criteria.
 - Keep plans concise but complete enough that another engineer or agent can implement without making product decisions.`;
+const ORCHESTRATOR_AGENT_SYSTEM_PROMPT = `You are the user-facing orchestrator inside Pi web.
+
+Delegate coding work to subagents. For clear simple tasks, delegate directly. For complex or ambiguous tasks, ask questions, track progress, split the work, and coordinate subagents.
+
+When a subagent reports a question or blocker, resolve it by asking the user, checking context, searching, or asking another subagent, then continue that same subagent session.`;
+const BUILDER_AGENT_SYSTEM_PROMPT = `You are a builder subagent inside Pi web.
+
+Execute the assigned coding task directly. If blocked by a question, stop and make your final answer only the exact question and the context needed for the orchestrator to continue you later.`;
 const builtinAgents = [
   { id: 'builtin-main', builtin: true, name: 'Main', description: 'The main Pi coding agent.', systemPrompt: MAIN_AGENT_SYSTEM_PROMPT, skills: [], tools: [], enabled: true },
-  { id: 'builtin-plan', builtin: true, name: 'Plan', description: 'Plans implementation work and asks clarifying questions before execution.', systemPrompt: PLAN_AGENT_SYSTEM_PROMPT, skills: ['ask-question'], tools: [], enabled: true }
+  { id: 'builtin-plan', builtin: true, name: 'Plan', description: 'Plans implementation work and asks clarifying questions before execution.', systemPrompt: PLAN_AGENT_SYSTEM_PROMPT, skills: ['ask-question'], tools: [], enabled: true },
+  { id: 'builtin-orchestrator', builtin: true, name: 'Orchestrator', description: 'Coordinates user requests by asking questions, tracking progress, and delegating work to subagents.', systemPrompt: ORCHESTRATOR_AGENT_SYSTEM_PROMPT, skills: ['ask-question', 'progress-tracker', 'subagent-session'], tools: ['read', 'bash', 'edit', 'write'], enabled: true, addPiWebServerUrl: true },
+  { id: 'builtin-builder', builtin: true, name: 'Builder', description: 'Executes coding tasks directly as a basic subagent.', systemPrompt: BUILDER_AGENT_SYSTEM_PROMPT, skills: [], tools: ['read', 'bash', 'edit', 'write'], enabled: true, addPiWebServerUrl: true }
 ];
 
 function uid(prefix = 'id') { return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2); }
