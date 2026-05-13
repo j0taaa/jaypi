@@ -215,8 +215,11 @@ export interface SubagentAgentRequest {
 }
 
 export interface SubagentSessionRequest {
-	agent: string;
+	agent?: string;
 	prompt: string;
+	sessionId?: string;
+	sessionFile?: string;
+	sessionPath?: string;
 }
 
 export interface ApplyAgentRequest {

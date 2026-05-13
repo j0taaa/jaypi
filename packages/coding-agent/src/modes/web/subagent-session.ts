@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import * as path from "node:path";
+import { SessionManager } from "../../core/session-manager.js";
 import { HttpError } from "./http.js";
 import type {
 	Broadcast,
@@ -24,6 +26,13 @@ export interface SubagentRpc {
 }
 
 export type SubagentRpcFactory = (broadcast: Broadcast, cwd: string, extraEnv: NodeJS.ProcessEnv) => SubagentRpc;
+
+interface TargetSession {
+	path: string;
+	id?: string;
+	name?: string;
+	cwd?: string;
+}
 
 export class SubagentSessionManager {
 	private agents: SubagentAgentConfig[] = [];
@@ -57,13 +66,15 @@ export class SubagentSessionManager {
 		cwd: string,
 		extraEnv: NodeJS.ProcessEnv = {},
 	): Promise<SubagentSessionData> {
-		const agent = this.resolveAgent(request.agent);
+		const targetSession = await this.resolveTargetSession(request);
+		const agent = targetSession ? undefined : this.resolveAgent(request.agent);
 		const prompt = typeof request.prompt === "string" ? request.prompt.trim() : "";
 		if (!prompt) throw new HttpError(400, "Missing prompt");
 
 		const id = `subagent_${randomUUID()}`;
-		let sessionFile = "";
-		let sessionId = "";
+		let sessionFile = targetSession?.path ?? "";
+		let sessionId = targetSession?.id ?? "";
+		const agentName = agent?.name ?? targetSession?.name ?? sessionId ?? "Existing session";
 		let finished = false;
 		let settled = false;
 		let resolveDone: (() => void) | undefined;
@@ -100,13 +111,17 @@ export class SubagentSessionManager {
 			}
 		};
 
-		const rpc = this.createRpc(childBroadcast, cwd, extraEnv);
+		const rpc = this.createRpc(childBroadcast, targetSession?.cwd || cwd, extraEnv);
 		this.running.set(id, rpc);
 		let runData: SubagentSessionData | null = null;
 		try {
-			await this.expectSuccess(rpc.send({ type: "new_session" }, 120000));
-			await this.expectSuccess(rpc.send({ type: "set_active_tools", tools: agent.tools ?? [] }, 120000));
-			await this.expectSuccess(rpc.send({ type: "set_system_prompt", systemPrompt: agent.systemPrompt }, 120000));
+			if (targetSession) {
+				await this.expectSuccess(rpc.send({ type: "switch_session", sessionPath: targetSession.path }, 120000));
+			} else if (agent) {
+				await this.expectSuccess(rpc.send({ type: "new_session" }, 120000));
+				await this.expectSuccess(rpc.send({ type: "set_active_tools", tools: agent.tools ?? [] }, 120000));
+				await this.expectSuccess(rpc.send({ type: "set_system_prompt", systemPrompt: agent.systemPrompt }, 120000));
+			}
 			const state = await this.expectSuccess<
 				WebRpcResponse & { data?: { sessionFile?: string; sessionId?: string } }
 			>(rpc.send({ type: "get_state" }, 120000));
@@ -114,16 +129,17 @@ export class SubagentSessionManager {
 			sessionId = state.data?.sessionId ?? "";
 			runData = {
 				id,
-				agent: agent.name,
+				agent: agentName,
 				prompt,
-				cwd,
+				cwd: targetSession?.cwd || cwd,
 				sessionFile,
 				sessionId,
 				answer: "",
 				status: "running",
 			};
 			this.broadcastRun("subagent_start", runData);
-			await this.expectSuccess(rpc.send({ type: "set_session_name", name: `Subagent: ${agent.name}` }, 120000));
+			if (agent)
+				await this.expectSuccess(rpc.send({ type: "set_session_name", name: `Subagent: ${agent.name}` }, 120000));
 			await this.expectSuccess(rpc.send({ type: "prompt", message: prompt }, 120000));
 			await done;
 			const answerResponse = await this.expectSuccess<WebRpcResponse & { data?: { text?: string } }>(
@@ -140,9 +156,9 @@ export class SubagentSessionManager {
 			const message = error instanceof Error ? error.message : String(error);
 			const data: SubagentSessionData = {
 				id,
-				agent: agent.name,
+				agent: agentName,
 				prompt,
-				cwd,
+				cwd: targetSession?.cwd || cwd,
 				sessionFile,
 				sessionId,
 				answer: "",
@@ -167,6 +183,21 @@ export class SubagentSessionManager {
 		const response = await promise;
 		if (!response.success) throw new Error(response.error);
 		return response as T & { success: true };
+	}
+
+	private async resolveTargetSession(request: SubagentSessionRequest): Promise<TargetSession | null> {
+		const sessionId = String(request.sessionId || "").trim();
+		const sessionRef = String(request.sessionFile || request.sessionPath || sessionId).trim();
+		if (!sessionRef) return null;
+		const sessions = await SessionManager.listAll();
+		const resolvedRef = path.isAbsolute(sessionRef) ? path.resolve(sessionRef) : "";
+		const match = sessions.find((session) => {
+			if (sessionId && session.id === sessionId) return true;
+			if (resolvedRef && path.resolve(session.path) === resolvedRef) return true;
+			return session.path === sessionRef;
+		});
+		if (!match) throw new HttpError(400, `Unknown session: ${sessionRef}`);
+		return match;
 	}
 
 	private broadcastRun(
