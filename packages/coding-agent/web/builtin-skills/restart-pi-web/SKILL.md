@@ -26,7 +26,9 @@ Run this from the project root:
 ```sh
 mkdir -p .pi
 cwd="$PWD"
-port="$(node -e 'try { console.log(new URL(process.env.PI_WEB_SUBAGENT_SESSION_URL || process.env.PI_WEB_ASK_QUESTION_URL || "http://127.0.0.1:5173").port || "5173") } catch { console.log("5173") }')"
+# Replace this with the exact value from "Current Pi web server URL".
+pi_web_url="<current-pi-web-server-url>"
+port="$(node -e 'try { console.log(new URL(process.argv[1]).port || "5173") } catch { console.log("5173") }' "$pi_web_url")"
 shell_pid="$$"
 rpc_pid="$(ps -o ppid= -p "$shell_pid" | tr -d ' ')"
 web_pid="$(ps -o ppid= -p "$rpc_pid" | tr -d ' ')"

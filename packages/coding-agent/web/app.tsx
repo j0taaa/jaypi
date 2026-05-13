@@ -168,6 +168,7 @@ function App() {
   const projectsRef = useRef<ProjectInfo[]>([]);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
+  const piWebServerUrl = window.location.origin.replace(/\/+$/, '');
 
   const allProjects = useMemo(() => {
     const visible = projects.filter(project => !hiddenProjects.has(project.cwd));
@@ -292,13 +293,19 @@ function App() {
     const options = chatAgentOptions();
     return options.find(agent => agent.id === selectedChatAgentId) || options.find(agent => agent.id === 'builtin-main') || options[0];
   }
+  function runtimeAgentPrompt(agent: any) {
+    let prompt = String(agent?.systemPrompt || '').replace(/\n*Current Pi web server URL:[^\n]*/g, '').trim();
+    if (agent?.addPiWebServerUrl ?? true) prompt += '\nCurrent Pi web server URL: ' + piWebServerUrl;
+    return prompt.trim();
+  }
   async function applySelectedChatAgent() {
     const agent = selectedChatAgent();
     if (!agent) return;
     if (agent.id === 'builtin-main') return;
-    const res = await fetch('/api/agent/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemPrompt: agent.systemPrompt, tools: agent.tools || [] }) });
+    const systemPrompt = runtimeAgentPrompt(agent);
+    const res = await fetch('/api/agent/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemPrompt, tools: agent.tools || [] }) });
     if (res.status === 404) {
-      const fallback = await fetch('/api/system-prompt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemPrompt: agent.systemPrompt }) });
+      const fallback = await fetch('/api/system-prompt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemPrompt }) });
       if (!fallback.ok) throw new Error(await fallback.text());
       return;
     }
@@ -428,7 +435,7 @@ function App() {
       id: agent.id,
       name: agent.name,
       description: agent.description || '',
-      systemPrompt: agent.systemPrompt || '',
+      systemPrompt: runtimeAgentPrompt(agent),
       tools: agent.tools || [],
     }));
     await fetch('/api/agents/registry', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agents: payload }) }).catch(() => {});
@@ -802,7 +809,7 @@ function App() {
   }
   function builtinAgentDefaults(agent: any) {
     const defaults = agent.id === 'builtin-main'
-      ? { ...agent, systemPrompt: mainSystemPrompt, skills: skills.filter((skill: any) => skill.name !== 'ask-question' && skill.name !== 'progress-tracker' && skill.name !== 'subagent-session').map((skill: any) => skill.name), tools: [...builtinTools, ...tools].map((tool: any) => tool.name) }
+      ? { ...agent, systemPrompt: mainSystemPrompt, skills: skills.filter((skill: any) => skill.name !== 'ask-question' && skill.name !== 'progress-tracker' && skill.name !== 'subagent-session' && skill.name !== 'restart-pi-web').map((skill: any) => skill.name), tools: [...builtinTools, ...tools].map((tool: any) => tool.name), addPiWebServerUrl: true }
       : agent;
     return { ...defaults, ...(builtinAgentOverrides[agent.id] || {}) };
   }
@@ -875,7 +882,7 @@ function App() {
     {folderOpen && <FolderModal path={folderPath} entries={folderEntries} browse={browseFolder} close={() => setFolderOpen(false)} select={openProject} />}
     {skillModal && <SkillModal skill={skillModal === true ? null : skillModal} onClose={() => setSkillModal(null)} onSave={saveSkill} />}
     {toolModal && <ToolModal tool={toolModal === true ? null : toolModal} onClose={() => setToolModal(null)} onSave={(tool: any) => { if (tool.id) saveTools(tools.map(t => t.id === tool.id ? tool : t)); else saveTools([...tools, { ...tool, id: uid('tool'), createdAt: new Date().toISOString() }]); setToolModal(null); }} />}
-    {agentModal && <AgentModal agent={agentModal === true ? null : agentModal} skills={skills} tools={[...builtinTools, ...tools]} cwd={state?.cwd} onClose={() => setAgentModal(null)} onSave={(agent: any) => { if (agent.builtin) saveBuiltinAgent(agent); else if (agent.id) saveAgents(agents.map(a => a.id === agent.id ? agent : a)); else saveAgents([...agents, { ...agent, id: uid('agent'), createdAt: new Date().toISOString() }]); setAgentModal(null); }} />}
+    {agentModal && <AgentModal agent={agentModal === true ? null : agentModal} skills={skills} tools={[...builtinTools, ...tools]} cwd={state?.cwd} piWebServerUrl={piWebServerUrl} onClose={() => setAgentModal(null)} onSave={(agent: any) => { if (agent.builtin) saveBuiltinAgent(agent); else if (agent.id) saveAgents(agents.map(a => a.id === agent.id ? agent : a)); else saveAgents([...agents, { ...agent, id: uid('agent'), createdAt: new Date().toISOString() }]); setAgentModal(null); }} />}
     {commandModal && <CommandOutputModal command={commandModal.title} text={commandModal.text} onClose={() => setCommandModal(null)} />}
   </div>;
 }

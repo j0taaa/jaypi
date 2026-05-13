@@ -7,9 +7,9 @@ description: Run another Pi web agent in a separate child conversation and wait 
 
 Use this skill when a task should be delegated to another Pi web agent in a separate conversation.
 
-In Pi web, `PI_WEB_SUBAGENT_SESSION_URL` is injected into shell commands. Do not infer that it is missing just because it is not shown in the prompt. When you have shell access, first check the variable in the shell and use it if it is set.
+Pi web provides `Current Pi web server URL` in the system prompt when this skill is available. Use that URL plus `/api/subagent-session` to start a child session.
 
-When `PI_WEB_SUBAGENT_SESSION_URL` is set, start a child session with a POST request:
+Start a child session with a POST request:
 
 ```json
 {
@@ -21,8 +21,9 @@ When `PI_WEB_SUBAGENT_SESSION_URL` is set, start a child session with a POST req
 Use a portable shell command like:
 
 ```sh
-test -n "$PI_WEB_SUBAGENT_SESSION_URL" || { echo "PI_WEB_SUBAGENT_SESSION_URL is not set"; exit 1; }
-curl -fsS -X POST "$PI_WEB_SUBAGENT_SESSION_URL" \
+# Replace this with the exact value from "Current Pi web server URL".
+pi_web_url="<current-pi-web-server-url>"
+curl -fsS -X POST "$pi_web_url/api/subagent-session" \
   -H 'content-type: application/json' \
   -d '{"agent":"Plan","prompt":"Create a decision-complete implementation plan for this feature."}'
 ```
@@ -46,4 +47,4 @@ The child session receives only the prompt you send. Include all context the chi
 
 Choose the agent by id or exact name, such as `Plan` or `Main`.
 
-Only fall back to asking the user to run the delegation manually in a new conversation after a shell command confirms that `PI_WEB_SUBAGENT_SESSION_URL` is empty or unavailable.
+If `Current Pi web server URL` is not present, ask the user to run the delegation manually in a new conversation.

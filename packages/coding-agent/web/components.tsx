@@ -652,7 +652,7 @@ function SkillModal({ skill, onClose, onSave }: any) {
   </EditorModal>;
 }
 function ToolModal({ tool, onClose, onSave }: any) { const [name, setName] = useState(tool?.name || ''); const [description, setDescription] = useState(tool?.description || ''); const [content, setContent] = useState(tool?.content || ''); return <EditorModal title={tool ? 'Edit tool' : 'Create tool'} onClose={onClose} onSave={() => onSave({ ...tool, name, description, content })}><Field label="Name"><input disabled={!!tool} value={name} onChange={e => setName(e.target.value)} /></Field><Field label="Description"><input value={description} onChange={e => setDescription(e.target.value)} /></Field><Field label="Content"><textarea value={content} onChange={e => setContent(e.target.value)} /></Field></EditorModal>; }
-function AgentModal({ agent, skills, tools, cwd, onClose, onSave }: any) {
+function AgentModal({ agent, skills, tools, cwd, piWebServerUrl, onClose, onSave }: any) {
   const [name, setName] = useState(agent?.name || '');
   const [description, setDescription] = useState(agent?.description || '');
   const [systemPrompt, setSystemPrompt] = useState(stripGeneratedPromptSections(agent?.systemPrompt || ''));
@@ -660,14 +660,16 @@ function AgentModal({ agent, skills, tools, cwd, onClose, onSave }: any) {
   const [selectedTools, setSelectedTools] = useState<string[]>(agent?.tools || []);
   const [addCurrentDate, setAddCurrentDate] = useState(agent?.addCurrentDate ?? (agent ? hasCurrentDate(agent.systemPrompt || '') : true));
   const [addCurrentWorkingDirectory, setAddCurrentWorkingDirectory] = useState(agent?.addCurrentWorkingDirectory ?? (agent ? hasCurrentWorkingDirectory(agent.systemPrompt || '') : true));
+  const [addPiWebServerUrl, setAddPiWebServerUrl] = useState(agent?.addPiWebServerUrl ?? (agent ? hasPiWebServerUrl(agent.systemPrompt || '') : true));
   const toggle = (list: string[], setList: any, value: string) => setList(list.includes(value) ? list.filter(item => item !== value) : [...list, value]);
-  return <EditorModal title={agent ? (agent.builtin ? 'Edit built-in agent' : 'Edit custom agent') : 'Create custom agent'} onClose={onClose} onSave={() => onSave({ ...agent, name, description, systemPrompt: buildAgentSystemPrompt(systemPrompt, selectedSkills, selectedTools, skills, { addCurrentDate, addCurrentWorkingDirectory, cwd }), skills: selectedSkills, tools: selectedTools, addCurrentDate, addCurrentWorkingDirectory })}>
+  return <EditorModal title={agent ? (agent.builtin ? 'Edit built-in agent' : 'Edit custom agent') : 'Create custom agent'} onClose={onClose} onSave={() => onSave({ ...agent, name, description, systemPrompt: buildAgentSystemPrompt(systemPrompt, selectedSkills, selectedTools, skills, { addCurrentDate, addCurrentWorkingDirectory, addPiWebServerUrl, cwd, piWebServerUrl }), skills: selectedSkills, tools: selectedTools, addCurrentDate, addCurrentWorkingDirectory, addPiWebServerUrl })}>
     <Field label="Name"><input value={name} onChange={e => setName(e.target.value)} /></Field>
     <Field label="Short description"><input value={description} onChange={e => setDescription(e.target.value)} /></Field>
     <Field label="System prompt"><textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} /></Field>
     <div><div className="mb-2 text-sm font-semibold text-gray-600 dark:text-slate-300">Generated context</div><div className="grid gap-2 rounded-xl border border-gray-200 p-2 dark:border-neutral-800">
       <ToggleRow label="Add current date" checked={addCurrentDate} onChange={setAddCurrentDate} />
       <ToggleRow label="Add current working directory" checked={addCurrentWorkingDirectory} onChange={setAddCurrentWorkingDirectory} />
+      <ToggleRow label="Add Pi web server URL" checked={addPiWebServerUrl} onChange={setAddPiWebServerUrl} />
     </div></div>
     <Checklist title="Skills this agent can use" empty="No skills found." items={skills.map((skill: any) => ({ key: skill.name, label: skill.name, desc: skill.description }))} selected={selectedSkills} toggle={(value: string) => toggle(selectedSkills, setSelectedSkills, value)} />
     <Checklist title="Tools this agent can use" items={tools.map((tool: any) => ({ key: tool.name, label: tool.name, desc: tool.description }))} selected={selectedTools} toggle={(value: string) => toggle(selectedTools, setSelectedTools, value)} />
@@ -676,7 +678,7 @@ function AgentModal({ agent, skills, tools, cwd, onClose, onSave }: any) {
 function Checklist({ title, items, selected, toggle, empty }: any) { return <div><div className="mb-2 text-sm font-semibold text-gray-600 dark:text-slate-300">{title}</div><div className="max-h-44 overflow-auto rounded-xl border border-gray-200 p-1.5 dark:border-neutral-800">{items.length === 0 ? <div className="p-2 text-sm text-gray-400 dark:text-slate-500">{empty || 'Nothing available.'}</div> : items.map((item: any) => <label key={item.key} className="grid cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-gray-50 dark:hover:bg-neutral-900"><input type="checkbox" className="!h-4 !w-4 !rounded !border-gray-300 !p-0 accent-piAccent dark:!border-neutral-700" checked={selected.includes(item.key)} onChange={() => toggle(item.key)} /><span className="min-w-0 truncate text-sm font-medium">{item.label}</span></label>)}</div></div>; }
 function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) { return <label className="grid cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-gray-50 dark:hover:bg-neutral-900"><input type="checkbox" className="!h-4 !w-4 !rounded !border-gray-300 !p-0 accent-piAccent dark:!border-neutral-700" checked={checked} onChange={e => onChange(e.target.checked)} /><span className="min-w-0 truncate text-sm font-medium">{label}</span></label>; }
 function stripGeneratedPromptSections(prompt: string) {
-  return stripCurrentWorkingDirectory(stripCurrentDate(stripAvailableSkillsSection(prompt))).trim();
+  return stripPiWebServerUrl(stripCurrentWorkingDirectory(stripCurrentDate(stripAvailableSkillsSection(prompt)))).trim();
 }
 function stripAvailableSkillsSection(prompt: string) {
   return String(prompt || '').replace(/\n*The following skills provide specialized instructions for specific tasks\.[\s\S]*?<\/available_skills>\n*/g, '\n').trim();
@@ -687,14 +689,20 @@ function stripCurrentDate(prompt: string) {
 function stripCurrentWorkingDirectory(prompt: string) {
   return String(prompt || '').replace(/\n*Current working directory:[^\n]*/g, '\n').trim();
 }
+function stripPiWebServerUrl(prompt: string) {
+  return String(prompt || '').replace(/\n*Current Pi web server URL:[^\n]*/g, '\n').trim();
+}
 function hasCurrentDate(prompt: string) {
   return /(?:^|\n)Current date(?: and time)?:[^\n]*/.test(String(prompt || ''));
 }
 function hasCurrentWorkingDirectory(prompt: string) {
   return /(?:^|\n)Current working directory:[^\n]*/.test(String(prompt || ''));
 }
+function hasPiWebServerUrl(prompt: string) {
+  return /(?:^|\n)Current Pi web server URL:[^\n]*/.test(String(prompt || ''));
+}
 type AgentSkillOption = { name: string; description?: string; path?: string; filePath?: string };
-function buildAgentSystemPrompt(basePrompt: string, selectedSkills: string[], _selectedTools: string[], skills: AgentSkillOption[], options: { addCurrentDate: boolean; addCurrentWorkingDirectory: boolean; cwd?: string }) {
+function buildAgentSystemPrompt(basePrompt: string, selectedSkills: string[], _selectedTools: string[], skills: AgentSkillOption[], options: { addCurrentDate: boolean; addCurrentWorkingDirectory: boolean; addPiWebServerUrl?: boolean; cwd?: string; piWebServerUrl?: string }) {
   let prompt = stripGeneratedPromptSections(basePrompt);
   const selected = skills.filter(skill => selectedSkills.includes(skill.name));
   if (selected.length > 0) {
@@ -722,6 +730,9 @@ function buildAgentSystemPrompt(basePrompt: string, selectedSkills: string[], _s
   }
   if (options.addCurrentWorkingDirectory && options.cwd) {
     prompt += '\nCurrent working directory: ' + String(options.cwd).replace(/\\/g, '/');
+  }
+  if (options.addPiWebServerUrl && options.piWebServerUrl) {
+    prompt += '\nCurrent Pi web server URL: ' + String(options.piWebServerUrl).replace(/\/+$/, '');
   }
   return prompt;
 }
