@@ -40,7 +40,7 @@ function ProjectTree({ project, collapsed, icon, currentSessionPath, onToggle, o
     </div>)}
   </div>;
 }
-function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker }: any) {
+function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker, rightRailOpen }: any) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,7 +172,7 @@ function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessa
       {renderStart > 0 && <div className="py-3 text-center text-xs text-gray-400">Scroll up to load older messages</div>}
       {messages.slice(renderStart).map((item: ChatItem) => <Message key={item.id} item={item} answerQuestion={answerQuestion} cwd={state?.cwd} />)}
     </div></main>
-    <form ref={formRef} onSubmit={submitPrompt} className="fixed bottom-0 left-[290px] right-0 bg-gradient-to-t from-white via-white px-6 pb-4 pt-3 dark:from-black dark:via-black max-[820px]:left-0"><div className="mx-auto w-full max-w-6xl">
+    <form ref={formRef} onSubmit={submitPrompt} className={'fixed bottom-0 left-[290px] bg-gradient-to-t from-white via-white px-6 pb-4 pt-3 dark:from-black dark:via-black max-[820px]:left-0 ' + (rightRailOpen ? 'right-0 min-[1100px]:right-[520px]' : 'right-0')}><div className="mx-auto w-full max-w-6xl">
       {progressTracker && <ProgressTrackerPanel tracker={progressTracker} onRemove={removeProgressTracker} />}
       {subagentRuns?.length > 0 && <SubagentRunsPanel runs={subagentRuns} openRun={openSubagentRun} />}
       {showAgentPicker && <BlankConversationAgentPicker agents={agentOptions || []} selectedAgentId={selectedAgentId} setSelectedAgentId={setSelectedAgentId} />}

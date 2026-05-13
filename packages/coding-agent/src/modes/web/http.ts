@@ -51,7 +51,27 @@ export function sendError(res: ServerResponse, error: unknown): void {
 export function contentTypeFor(filePath: string): string {
 	switch (path.extname(filePath).toLowerCase()) {
 		case ".html":
+		case ".htm":
 			return "text/html; charset=utf-8";
+		case ".pdf":
+			return "application/pdf";
+		case ".md":
+		case ".markdown":
+			return "text/markdown; charset=utf-8";
+		case ".txt":
+		case ".log":
+			return "text/plain; charset=utf-8";
+		case ".png":
+			return "image/png";
+		case ".jpg":
+		case ".jpeg":
+			return "image/jpeg";
+		case ".gif":
+			return "image/gif";
+		case ".webp":
+			return "image/webp";
+		case ".avif":
+			return "image/avif";
 		case ".js":
 			return "text/javascript; charset=utf-8";
 		case ".css":
