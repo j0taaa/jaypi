@@ -447,6 +447,7 @@ function App() {
     const res = await fetch('/api/projects');
     const json = await res.json();
     const data = json.projects || [];
+    projectsRef.current = data;
     setProjects(data);
     return data;
   }
@@ -456,6 +457,28 @@ function App() {
     const hasSession = projectList.some(project => project.sessions.some((session: SessionInfo) => session.path === sessionPath));
     if (!hasSession) setTimeout(loadProjects, 300);
     return projectList;
+  }
+  function removeSessionFromProjects(sessionPath: string) {
+    let nextProjects: ProjectInfo[] = [];
+    setProjects(prev => {
+      nextProjects = prev.map(project => ({ ...project, sessions: project.sessions.filter(session => session.path !== sessionPath) }));
+      projectsRef.current = nextProjects;
+      return nextProjects;
+    });
+    setSessionSidebarStates(prev => {
+      const next = { ...prev };
+      delete next[sessionPath];
+      return next;
+    });
+    return nextProjects;
+  }
+  function nextSessionAfterDelete(sessionPath: string, projectList = projectsRef.current) {
+    const sourceProject = projectList.find(project => project.sessions.some(session => session.path === sessionPath));
+    const withoutDeleted = projectList.map(project => ({ ...project, sessions: project.sessions.filter(session => session.path !== sessionPath) }));
+    const sameProject = sourceProject ? withoutDeleted.find(project => project.cwd === sourceProject.cwd) : null;
+    const nextSession = sameProject?.sessions[0] || withoutDeleted.flatMap(project => project.sessions.map(session => ({ project, session })))[0]?.session;
+    const nextProject = nextSession ? withoutDeleted.find(project => project.sessions.some(session => session.path === nextSession.path)) : null;
+    return nextProject && nextSession ? { project: nextProject, session: nextSession } : null;
   }
   async function loadMessages() {
     resetStreamingRefs();
@@ -850,12 +873,19 @@ function App() {
   }
   async function deleteConversation(session: SessionInfo) {
     if (!confirm('Delete this conversation? This cannot be undone.')) return;
-    const deletingActive = currentSessionPath === session.path;
+    const deletingActive = activeSessionPath() === session.path;
+    const nextTarget = nextSessionAfterDelete(session.path);
     setMenu(null); setStatus('deleting conversation…');
     const res = await fetch('/api/session', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionPath: session.path }) });
     if (!res.ok) { alert(await res.text()); setStatus('ready'); return; }
-    if (deletingActive) await newChat();
-    await loadProjects(); setStatus('ready');
+    removeSessionFromProjects(session.path);
+    if (deletingActive) {
+      if (nextTarget) await openSession(nextTarget.project, nextTarget.session, true);
+      else await newChat();
+    } else {
+      void loadProjects();
+    }
+    setStatus('ready');
   }
   function setCollapsed(cwd: string) {
     setCollapsedProjects(prev => {

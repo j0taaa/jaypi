@@ -1046,6 +1046,11 @@ async function startWebServer(options: WebOptions): Promise<void> {
 
 		const sessionPath = path.resolve(stateResponse.data.sessionFile);
 		if (sessions.some((session) => path.resolve(session.path) === sessionPath)) return sessions;
+		const activeFileExists = await fs
+			.stat(sessionPath)
+			.then((stat) => stat.isFile())
+			.catch(() => false);
+		if (!activeFileExists) return sessions;
 
 		const messagesResponse = await rpc
 			.send<WebRpcResponse & { data?: { messages?: unknown[] } }>({ type: "get_messages" })
