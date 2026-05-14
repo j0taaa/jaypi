@@ -40,7 +40,7 @@ function ProjectTree({ project, collapsed, icon, currentSessionPath, onToggle, o
     </div>)}
   </div>;
 }
-function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker, rightRailOpen }: any) {
+function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, previewTabs, closePreviewTab, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker, rightRailOpen }: any) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,6 +172,7 @@ function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessa
       {renderStart > 0 && <div className="py-3 text-center text-xs text-gray-400">Scroll up to load older messages</div>}
       {messages.slice(renderStart).map((item: ChatItem) => <Message key={item.id} item={item} answerQuestion={answerQuestion} cwd={state?.cwd} />)}
     </div></main>
+    <PreviewTabsPanel tabs={previewTabs || []} closeTab={closePreviewTab} composerHeight={composerHeight} />
     <form ref={formRef} onSubmit={submitPrompt} className={'fixed bottom-0 left-[290px] bg-gradient-to-t from-white via-white px-6 pb-4 pt-3 dark:from-black dark:via-black max-[820px]:left-0 ' + (rightRailOpen ? 'right-0 min-[1100px]:right-[520px]' : 'right-0')}><div className="mx-auto w-full max-w-6xl">
       {progressTracker && <ProgressTrackerPanel tracker={progressTracker} onRemove={removeProgressTracker} />}
       {subagentRuns?.length > 0 && <SubagentRunsPanel runs={subagentRuns} openRun={openSubagentRun} />}
@@ -235,6 +236,27 @@ function BlankConversationAgentPicker({ agents, selectedAgentId, setSelectedAgen
     </label>
     <div className="min-w-0 flex-1 truncate text-gray-400 dark:text-slate-500" title={selected.description || ''}>{selected.description || 'Choose who should answer this conversation.'}</div>
   </div>;
+}
+function PreviewTabsPanel({ tabs, closeTab, composerHeight }: any) {
+  const [activeId, setActiveId] = useState('');
+  useEffect(() => {
+    if (!tabs?.length) return;
+    if (!tabs.some((tab: any) => tab.id === activeId)) setActiveId(tabs[0].id);
+  }, [tabs?.length, activeId]);
+  if (!tabs?.length) return null;
+  const active = tabs.find((tab: any) => tab.id === activeId) || tabs[0];
+  const isImage = /\.(png|jpe?g|gif|webp|svg|avif)(?:[?#].*)?$/i.test(String(active.url || active.source || ''));
+  return <aside className="fixed right-4 top-16 z-20 flex w-[min(560px,calc(100vw-320px))] min-w-[360px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-pi dark:border-neutral-800 dark:bg-neutral-950 max-[820px]:inset-0 max-[820px]:z-50 max-[820px]:w-auto max-[820px]:min-w-0 max-[820px]:rounded-none" style={{ bottom: window.matchMedia?.('(max-width: 820px)').matches ? 0 : composerHeight + 28 }}>
+    <div className="flex h-11 shrink-0 items-center gap-1 border-b border-gray-200 px-2 dark:border-neutral-900">
+      <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+        {tabs.map((tab: any) => <button key={tab.id} type="button" className={'max-w-44 truncate rounded-lg px-2.5 py-1.5 text-xs font-semibold ' + (tab.id === active.id ? 'bg-gray-900 text-white dark:bg-slate-100 dark:text-black' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-neutral-900')} title={tab.source || tab.url} onClick={() => setActiveId(tab.id)}>{tab.title || baseName(tab.source || tab.url)}</button>)}
+      </div>
+      <button type="button" className="rounded-lg px-2 py-1 text-sm text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-slate-500 dark:hover:bg-neutral-900 dark:hover:text-slate-200" onClick={() => closeTab?.(active.id)}>×</button>
+    </div>
+    <div className="min-h-0 flex-1 bg-gray-50 dark:bg-black">
+      {isImage ? <div className="flex h-full items-center justify-center overflow-auto p-4"><img src={active.url} alt={active.title || 'preview'} className="max-h-full max-w-full object-contain" /></div> : <iframe title={active.title || 'Preview'} src={active.url} className="h-full w-full border-0 bg-white dark:bg-black" />}
+    </div>
+  </aside>;
 }
 function SubagentRunsPanel({ runs, openRun }: any) {
   return <div className="mb-2 max-h-40 overflow-auto rounded-2xl border border-gray-200 bg-white/95 p-1.5 shadow-sm dark:border-neutral-800 dark:bg-neutral-950/95">
@@ -767,6 +789,7 @@ function Field({ label, children }: any) { return <label className="block"><span
   ProjectTree,
   ChatView,
   TerminalPane,
+  PreviewTabsPanel,
   AttachmentPreview,
   Message,
   ToolStatus,

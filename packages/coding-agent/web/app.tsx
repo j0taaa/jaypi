@@ -125,6 +125,7 @@ function App() {
   const [stats, setStats] = useState<any>(null);
   const [progressTracker, setProgressTracker] = useState<any>(null);
   const [subagentRuns, setSubagentRuns] = useState<any[]>([]);
+  const [previewTabs, setPreviewTabs] = useState<any[]>([]);
   const [gitStatus, setGitStatus] = useState<GitProjectStatus | null>(null);
   const [gitBranches, setGitBranches] = useState<GitBranchInfo[]>([]);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
@@ -563,6 +564,11 @@ function App() {
       setMessages(prev => prev.some(item => item.id === e.id) ? prev : [...prev, { id: e.id, kind: 'question', title: 'Question', text: e.question, running: true, args: { request: e, options: e.options || [] } }]);
       setStatus('waiting for answer…');
     }
+    if (e.type === 'preview_tab') {
+      setPreviewTabs(prev => [e.data, ...prev.filter(tab => tab.id !== e.data?.id)].filter(Boolean).slice(0, 6));
+      setStatus('preview opened');
+      setTimeout(() => setStatus('ready'), 1200);
+    }
     if (e.type === 'progress_tracker') {
       setProgressTracker((current: any) => {
         const sessionFile = stateRef.current?.sessionFile;
@@ -692,6 +698,9 @@ function App() {
       setProgressTracker(previous);
       addItem({ kind: 'tool', title: 'Progress tracker remove failed', text: String(err.message || err), error: true });
     }
+  }
+  function closePreviewTab(id: string) {
+    setPreviewTabs(prev => prev.filter(tab => tab.id !== id));
   }
   async function openSubagentRun(run: any) {
     if (!run?.sessionFile) return;
@@ -854,7 +863,7 @@ function App() {
         <div className="flex items-center gap-2"><button type="button" className="hidden rounded-lg bg-gray-100 px-2 py-1 text-gray-700 dark:bg-neutral-900 dark:text-slate-200 max-[820px]:block" onClick={() => setSidebarOpen(true)}>☰</button><h1 className="text-xs font-semibold">{view === 'skills' ? 'Skills' : view === 'tools' ? 'Tools' : 'Agents'}</h1></div>
         <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500"><ThemeToggle value={themePreference} onChange={setThemePreference} /><span>π Pi Web</span></div>
       </header>}
-      {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} subagentRuns={subagentRuns} openSubagentRun={openSubagentRun} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} agentOptions={availableChatAgents} selectedAgentId={selectedChatAgentId} setSelectedAgentId={setSelectedChatAgentId} showAgentPicker={emptyChat} />}
+      {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} subagentRuns={subagentRuns} openSubagentRun={openSubagentRun} previewTabs={previewTabs} closePreviewTab={closePreviewTab} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} agentOptions={availableChatAgents} selectedAgentId={selectedChatAgentId} setSelectedAgentId={setSelectedChatAgentId} showAgentPicker={emptyChat} />}
       {view === 'skills' && <SkillsView skills={skills} reload={async () => { await loadSkills(); await loadCommands(); }} openModal={setSkillModal} />}
       {view === 'tools' && <ToolsView tools={[...builtinTools, ...tools]} openModal={setToolModal} saveTools={saveTools} customTools={tools} />}
       {view === 'agents' && <AgentsView builtinAgents={resolvedBuiltinAgents} customAgents={agents} openModal={setAgentModal} saveAgents={saveAgents} />}

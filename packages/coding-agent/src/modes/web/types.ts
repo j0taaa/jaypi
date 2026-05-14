@@ -119,6 +119,10 @@ export type WebEvent =
 			question: string;
 			options: AskQuestionOption[];
 	  }
+	| {
+			type: "preview_tab";
+			data: PreviewTabData;
+	  }
 	| ({
 			type: "progress_tracker";
 	  } & ProgressTrackerData)
@@ -196,6 +200,19 @@ export interface AskQuestionOption {
 	label: string;
 	image?: string;
 	description?: string;
+}
+
+export interface PreviewTabRequest {
+	source?: string;
+	title?: string;
+}
+
+export interface PreviewTabData {
+	id: string;
+	source: string;
+	url: string;
+	title: string;
+	kind: "url" | "file";
 }
 
 export interface ProgressTrackerRequest {

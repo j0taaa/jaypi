@@ -13,6 +13,7 @@ import { assertHostAllowed, parseWebArgs, usage } from "./args.js";
 import { assertAuthorized, assertSafeOrigin, requestHasToken, writeAuthRedirect } from "./auth.js";
 import { GitProjectManager } from "./git-project.js";
 import {
+	contentTypeFor,
 	HttpError,
 	readJsonBody,
 	requireNonEmptyString,
@@ -36,6 +37,8 @@ import type {
 	AskQuestionRequest,
 	GitBranchSwitchRequest,
 	GitCommitRequest,
+	PreviewTabData,
+	PreviewTabRequest,
 	ProgressTrackerRequest,
 	PromptRequest,
 	SetModelRequest,
@@ -311,6 +314,13 @@ async function startWebServer(options: WebOptions): Promise<void> {
 			sendJson(res, { success: true });
 			return;
 		}
+		if (req.method === "POST" && url.pathname === "/api/preview-tab") {
+			const body = await readJsonBody<PreviewTabRequest>(req, 64 * 1024);
+			const data = previewTab(body);
+			broadcast({ type: "preview_tab", data });
+			sendJson(res, { success: true, data });
+			return;
+		}
 		if (req.method === "POST" && url.pathname === "/api/agents/registry") {
 			const body = await readJsonBody<AgentRegistrySyncRequest>(req, 1024 * 1024);
 			subagentSessionManager.setAgents(Array.isArray(body.agents) ? body.agents : []);
@@ -352,6 +362,10 @@ async function startWebServer(options: WebOptions): Promise<void> {
 		}
 		if (req.method === "GET" && url.pathname === "/api/local-image") {
 			await sendLocalImage(res, requireNonEmptyString(url.searchParams.get("path"), "path"));
+			return;
+		}
+		if (req.method === "GET" && url.pathname === "/api/preview-file") {
+			await sendPreviewFile(res, requireNonEmptyString(url.searchParams.get("path"), "path"));
 			return;
 		}
 		if (req.method === "POST" && url.pathname === "/api/new-session") {
@@ -462,6 +476,49 @@ async function startWebServer(options: WebOptions): Promise<void> {
 		if (!mimeType) throw new HttpError(404, "Image not found");
 		const data = await fs.readFile(resolvedPath);
 		res.writeHead(200, { "content-type": mimeType, "cache-control": "no-cache" });
+		res.end(data);
+	}
+
+	function previewTab(input: PreviewTabRequest): PreviewTabData {
+		const source = String(input.source || "").trim();
+		const resolved = resolvePreviewSource(source || "/");
+		return {
+			id: `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+			source,
+			url: resolved.url,
+			title: String(input.title || "").trim() || resolved.title,
+			kind: resolved.kind,
+		};
+	}
+
+	function resolvePreviewSource(source: string): { url: string; title: string; kind: "url" | "file" } {
+		if (/^https?:\/\//i.test(source)) return { url: source, title: source, kind: "url" };
+		const host = source.split(/[/?#]/)[0] || "";
+		if (
+			!source.startsWith(".") &&
+			!source.startsWith("/") &&
+			(/^(localhost|127(?:\.\d{1,3}){3})(?::\d+)?$/i.test(host) ||
+				/^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::\d+)?$/i.test(host))
+		) {
+			return { url: `http://${source}`, title: source, kind: "url" };
+		}
+		const expandedPath = source === "~" || source.startsWith("~/") ? path.join(homedir(), source.slice(2)) : source;
+		const filePath = path.isAbsolute(expandedPath) ? expandedPath : path.resolve(activeCwd, expandedPath);
+		return {
+			url: `/api/preview-file?path=${encodeURIComponent(filePath)}`,
+			title: path.basename(filePath) || filePath,
+			kind: "file",
+		};
+	}
+
+	async function sendPreviewFile(res: http.ServerResponse, filePath: string): Promise<void> {
+		const expandedPath =
+			filePath === "~" || filePath.startsWith(`~${path.sep}`) ? path.join(homedir(), filePath.slice(2)) : filePath;
+		const resolvedPath = path.resolve(expandedPath);
+		const stat = await fs.stat(resolvedPath).catch(() => null);
+		if (!stat?.isFile()) throw new HttpError(404, "Preview file not found");
+		const data = await fs.readFile(resolvedPath);
+		res.writeHead(200, { "content-type": contentTypeFor(resolvedPath), "cache-control": "no-cache" });
 		res.end(data);
 	}
 
