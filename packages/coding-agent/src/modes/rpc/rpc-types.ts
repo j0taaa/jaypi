@@ -30,6 +30,7 @@ export type RpcCommand =
 	| { id?: string; type: "set_system_prompt"; systemPrompt: string }
 	| { id?: string; type: "set_active_tools"; tools: string[] }
 	| { id?: string; type: "set_env"; env: Record<string, string | null | undefined> }
+	| { id?: string; type: "reload" }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }

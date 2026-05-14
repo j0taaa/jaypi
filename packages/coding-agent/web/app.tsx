@@ -15,6 +15,11 @@ type ProjectInfo = {
   modified?: string;
 };
 
+type SessionSidebarState = {
+  generating?: boolean;
+  unread?: boolean;
+};
+
 type GitChangedLines = {
   added: number;
   deleted: number;
@@ -53,7 +58,7 @@ type ChatItem = {
   args?: any;
 };
 
-type ViewName = 'chat' | 'agents' | 'skills' | 'tools';
+type ViewName = 'chat' | 'agents' | 'skills' | 'tools' | 'settings';
 type ThemePreference = 'system' | 'light' | 'dark';
 
 declare const React: any;
@@ -92,6 +97,7 @@ const {
   SidebarButton,
   NewChatIcon,
   SearchIcon,
+  SettingsIcon,
   ProjectTree,
   ChatView,
   TerminalPane,
@@ -103,6 +109,7 @@ const {
   SkillsView,
   ToolsView,
   AgentsView,
+  SettingsView,
   SkillModal,
   ToolModal,
   AgentModal,
@@ -127,6 +134,7 @@ function App() {
   const [subagentRuns, setSubagentRuns] = useState<any[]>([]);
   const [previewTabs, setPreviewTabs] = useState<any[]>([]);
   const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
+  const [sessionSidebarStates, setSessionSidebarStates] = useState<Record<string, SessionSidebarState>>({});
   const [gitStatus, setGitStatus] = useState<GitProjectStatus | null>(null);
   const [gitBranches, setGitBranches] = useState<GitBranchInfo[]>([]);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
@@ -164,6 +172,8 @@ function App() {
   const activeThinkingId = useRef<string | null>(null);
   const busyRef = useRef(false);
   const stateRef = useRef<any>(null);
+  const viewRef = useRef<ViewName>('chat');
+  const currentSessionPathRef = useRef('');
   const queuedPromptsRef = useRef<any[]>([]);
   const drainingQueueRef = useRef(false);
   const projectsRef = useRef<ProjectInfo[]>([]);
@@ -257,6 +267,33 @@ function App() {
     busyRef.current = value;
     setBusy(value);
   }
+  function activeSessionPath() {
+    return currentSessionPathRef.current || stateRef.current?.sessionFile || '';
+  }
+  function isViewingSession(sessionPath: string) {
+    return viewRef.current === 'chat' && activeSessionPath() === sessionPath;
+  }
+  function setSessionGenerating(sessionPath?: string | null, generating = true) {
+    if (!sessionPath) return;
+    setSessionSidebarStates(prev => ({
+      ...prev,
+      [sessionPath]: { ...(prev[sessionPath] || {}), generating, unread: generating ? false : prev[sessionPath]?.unread },
+    }));
+  }
+  function finishSessionGeneration(sessionPath?: string | null) {
+    if (!sessionPath) return;
+    setSessionSidebarStates(prev => ({
+      ...prev,
+      [sessionPath]: { ...(prev[sessionPath] || {}), generating: false, unread: !isViewingSession(sessionPath) },
+    }));
+  }
+  function clearSessionUnread(sessionPath?: string | null) {
+    if (!sessionPath) return;
+    setSessionSidebarStates(prev => ({
+      ...prev,
+      [sessionPath]: { ...(prev[sessionPath] || {}), unread: false },
+    }));
+  }
   function setQueue(next: any[]) {
     queuedPromptsRef.current = next;
     setQueuedPrompts(next);
@@ -319,6 +356,9 @@ function App() {
     const payload = promptPayload(message, attachments);
     const res = await fetch('/api/prompt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...payload, streamingBehavior }) });
     if (!res.ok) throw new Error(await res.text());
+    const nextState = await loadState();
+    setSessionGenerating(nextState?.sessionFile || activeSessionPath(), true);
+    await refreshProjectsForSession(nextState?.sessionFile);
   }
   async function runSlashCommand(message: string) {
     const commandText = message.trim();
@@ -401,6 +441,13 @@ function App() {
     setTimeout(() => applyRoute(data), 0);
     return data;
   }
+  async function refreshProjectsForSession(sessionPath?: string | null) {
+    const projectList = await loadProjects();
+    if (!sessionPath) return projectList;
+    const hasSession = projectList.some(project => project.sessions.some((session: SessionInfo) => session.path === sessionPath));
+    if (!hasSession) setTimeout(loadProjects, 300);
+    return projectList;
+  }
   async function loadMessages() {
     resetStreamingRefs();
     const res = await fetch('/api/messages');
@@ -409,11 +456,24 @@ function App() {
     setMessages(renderStoredMessages(raw));
   }
   async function loadState() {
-    try { const json = await (await fetch('/api/state')).json(); setState(json.data || null); } catch {}
+    let loadedState: { sessionFile?: string; isStreaming?: boolean } | null = null;
+    try {
+      const json = await (await fetch('/api/state')).json();
+      loadedState = json.data || null;
+      stateRef.current = loadedState;
+      setState(loadedState);
+      if (loadedState?.sessionFile) {
+        currentSessionPathRef.current = loadedState.sessionFile;
+        setCurrentSessionPath(loadedState.sessionFile);
+        if (loadedState.isStreaming) setSessionGenerating(loadedState.sessionFile, true);
+        if (isViewingSession(loadedState.sessionFile)) clearSessionUnread(loadedState.sessionFile);
+      }
+    } catch {}
     try { const json = await (await fetch('/api/stats')).json(); setStats(json.data || null); } catch {}
     try { const json = await (await fetch('/api/system-prompt')).json(); setMainSystemPrompt(json.data?.systemPrompt || MAIN_AGENT_SYSTEM_PROMPT); } catch {}
     try { const json = await (await fetch('/api/progress-tracker')).json(); setProgressTracker(json.data || null); } catch { setProgressTracker(null); }
     await loadGitStatus();
+    return loadedState;
   }
   async function loadGitStatus() {
     try { const json = await (await fetch('/api/git/status')).json(); setGitStatus(json.data || null); } catch { setGitStatus(null); }
@@ -446,6 +506,7 @@ function App() {
     if (route.page === 'skills') { setView('skills'); loadSkills(); return; }
     if (route.page === 'tools') { setView('tools'); return; }
     if (route.page === 'agents') { setView('agents'); loadSkills(); return; }
+    if (route.page === 'settings') { setView('settings'); return; }
     setView('chat');
     if (route.page === 'conversation') {
       const project = projectList.find(project => projectRouteId(project) === route.projectId);
@@ -457,6 +518,7 @@ function App() {
     setView('chat');
     const previousRoute = window.location.pathname + window.location.search;
     if (updateUrl) pushRoute(sessionRoute(project, session));
+    clearSessionUnread(session.path);
     if (currentSessionPath === session.path) return;
     setStatus('switching session…');
     setQueue([]);
@@ -465,6 +527,7 @@ function App() {
     try {
       const res = await fetch('/api/switch-session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionPath: session.path }), signal: controller.signal });
       if (!res.ok) throw new Error(await res.text());
+      currentSessionPathRef.current = session.path;
       setCurrentSessionPath(session.path);
       await loadMessages();
       setProgressTracker(null);
@@ -496,6 +559,8 @@ function App() {
 
   useEffect(() => { projectsRef.current = projects; }, [projects]);
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { viewRef.current = view; }, [view]);
+  useEffect(() => { currentSessionPathRef.current = currentSessionPath; }, [currentSessionPath]);
   useEffect(() => { queuedPromptsRef.current = queuedPrompts; setTimeout(drainPromptQueue, 1000); }, []);
   useEffect(() => {
     loadState(); loadModels(); loadCommands(); loadProjects();
@@ -585,11 +650,13 @@ function App() {
     }
     if (e.type === 'subagent_start' || e.type === 'subagent_update' || e.type === 'subagent_end' || e.type === 'subagent_error') {
       upsertSubagentRun(e.data || {});
+      if (e.data?.sessionFile && (e.type === 'subagent_start' || e.type === 'subagent_update')) setSessionGenerating(e.data.sessionFile, e.data.status !== 'done' && e.data.status !== 'error');
+      if (e.data?.sessionFile && (e.type === 'subagent_end' || e.type === 'subagent_error')) finishSessionGeneration(e.data.sessionFile);
       if (e.type === 'subagent_start' || e.type === 'subagent_end' || e.type === 'subagent_error') setTimeout(loadProjects, 250);
     }
-    if (e.type === 'agent_start') { resetStreamingRefs(); setBusyState(true); setStatus('thinking…'); }
-    if (e.type === 'web_connected' && e.rpcBusy) { setBusyState(true); setStatus('thinking…'); loadState(); }
-    if (e.type === 'agent_end') { finishThinking(); finishAssistant(); setBusyState(false); setStatus('ready'); setMessages(prev => prev.map(item => item.running ? { ...item, running: false } : item)); loadMessages(); loadProjects(); loadState(); setTimeout(drainPromptQueue, 150); }
+    if (e.type === 'agent_start') { resetStreamingRefs(); setBusyState(true); setStatus('thinking…'); const sessionPath = activeSessionPath(); if (sessionPath) { setSessionGenerating(sessionPath, true); refreshProjectsForSession(sessionPath); } else loadState().then(data => { setSessionGenerating(data?.sessionFile, true); refreshProjectsForSession(data?.sessionFile); }); }
+    if (e.type === 'web_connected' && e.rpcBusy) { setBusyState(true); setStatus('thinking…'); loadState().then(data => { setSessionGenerating(data?.sessionFile, true); refreshProjectsForSession(data?.sessionFile); }); }
+    if (e.type === 'agent_end') { const sessionPath = activeSessionPath(); finishThinking(); finishAssistant(); setBusyState(false); setStatus('ready'); setMessages(prev => prev.map(item => item.running ? { ...item, running: false } : item)); if (sessionPath) finishSessionGeneration(sessionPath); loadMessages(); loadState().then(data => { const nextSessionPath = sessionPath || data?.sessionFile; if (!sessionPath) finishSessionGeneration(nextSessionPath); refreshProjectsForSession(nextSessionPath); }); setTimeout(drainPromptQueue, 150); }
     if (e.type === 'message_start') { resetStreamingRefs(); }
     if (e.type === 'message_end') { finishThinking(); finishAssistant(); }
     if (e.type === 'message_update') {
@@ -848,6 +915,7 @@ function App() {
   const resolvedBuiltinAgents = builtinAgents.map(agent => builtinAgentDefaults(agent));
   const availableChatAgents = [...resolvedBuiltinAgents, ...agents];
   const emptyChat = isBlankConversation(messages);
+  const activeSidebarSessionPath = currentSessionPath || state?.sessionFile || '';
   function setDesktopGitPanelHidden(hidden: boolean) {
     setGitPanelHidden(hidden);
     localStorage.setItem('piWebGitPanelHidden', hidden ? 'true' : 'false');
@@ -855,17 +923,24 @@ function App() {
 
   return <div className="grid h-screen grid-cols-[290px_minmax(0,1fr)] bg-white text-[#202124] dark:bg-black dark:text-slate-100 max-[820px]:grid-cols-1">
     {sidebarOpen && <div className="fixed inset-0 z-30 bg-gray-900/30 min-[821px]:hidden" onClick={() => setSidebarOpen(false)} />}
-    <aside className={'h-screen overflow-y-auto bg-piPanel px-3 py-3 text-piText scrollbar-thin dark:bg-neutral-950 dark:text-slate-100 max-[820px]:fixed max-[820px]:inset-y-0 max-[820px]:left-0 max-[820px]:z-40 max-[820px]:w-[290px] max-[820px]:transition-transform ' + (sidebarOpen ? 'max-[820px]:translate-x-0' : 'max-[820px]:-translate-x-full')}>
-      <SidebarButton icon={<NewChatIcon />} label="New chat" onClick={() => { setSidebarOpen(false); newChat(); }} />
-      <SidebarButton icon={<SearchIcon />} label="Search" onClick={() => { setSidebarOpen(false); setSearchOpen(true); }} />
-      <SidebarButton icon="◎" label="Agents" onClick={() => { setSidebarOpen(false); go('/agents', 'agents'); }} />
-      <SidebarButton icon="✦" label="Skills" onClick={() => { setSidebarOpen(false); go('/skills', 'skills'); loadSkills(); }} />
-      <SidebarButton icon="⚙" label="Tools" onClick={() => { setSidebarOpen(false); go('/tools', 'tools'); }} />
-      <SidebarButton icon="＋" label="Add project" onClick={() => browseFolder('')} />
-      <div className="mx-1 mb-2 mt-4 text-[11px] font-medium uppercase tracking-wide text-[#9a9a9a] dark:text-slate-500">Projects</div>
-      <div className="space-y-1.5">
-        {filteredProjects.length === 0 && <div className="pl-8 text-[11px] text-piMuted">No projects yet. Use Add project to open a folder.</div>}
-        {filteredProjects.map(project => <ProjectTree key={project.cwd} project={project} collapsed={collapsedProjects.has(project.cwd) && !projectQuery} icon={projectIcons[project.cwd]} currentSessionPath={currentSessionPath} onToggle={() => setCollapsed(project.cwd)} onOpen={(project: ProjectInfo, session: SessionInfo, updateUrl: boolean) => { setSidebarOpen(false); openSession(project, session, updateUrl); }} onMenu={(kind, payload, ev) => setMenu({ kind, payload, x: ev.currentTarget.getBoundingClientRect().left, y: ev.currentTarget.getBoundingClientRect().bottom + 6 })} />)}
+    <aside className={'flex h-screen flex-col bg-piPanel px-3 py-3 text-piText dark:bg-neutral-950 dark:text-slate-100 max-[820px]:fixed max-[820px]:inset-y-0 max-[820px]:left-0 max-[820px]:z-40 max-[820px]:w-[290px] max-[820px]:transition-transform ' + (sidebarOpen ? 'max-[820px]:translate-x-0' : 'max-[820px]:-translate-x-full')}>
+      <div className="shrink-0">
+        <SidebarButton icon={<NewChatIcon />} label="New chat" onClick={() => { setSidebarOpen(false); newChat(); }} />
+        <SidebarButton icon={<SearchIcon />} label="Search" onClick={() => { setSidebarOpen(false); setSearchOpen(true); }} />
+        <SidebarButton icon="◎" label="Agents" onClick={() => { setSidebarOpen(false); go('/agents', 'agents'); }} />
+        <SidebarButton icon="✦" label="Skills" onClick={() => { setSidebarOpen(false); go('/skills', 'skills'); loadSkills(); }} />
+        <SidebarButton icon="⚙" label="Tools" onClick={() => { setSidebarOpen(false); go('/tools', 'tools'); }} />
+        <SidebarButton icon="＋" label="Add project" onClick={() => browseFolder('')} />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+        <div className="mx-1 mb-2 mt-4 text-[11px] font-medium uppercase tracking-wide text-[#9a9a9a] dark:text-slate-500">Projects</div>
+        <div className="space-y-1.5">
+          {filteredProjects.length === 0 && <div className="pl-8 text-[11px] text-piMuted">No projects yet. Use Add project to open a folder.</div>}
+          {filteredProjects.map(project => <ProjectTree key={project.cwd} project={project} collapsed={collapsedProjects.has(project.cwd) && !projectQuery} icon={projectIcons[project.cwd]} currentSessionPath={activeSidebarSessionPath} sessionStates={sessionSidebarStates} onToggle={() => setCollapsed(project.cwd)} onOpen={(project: ProjectInfo, session: SessionInfo, updateUrl: boolean) => { setSidebarOpen(false); openSession(project, session, updateUrl); }} onMenu={(kind, payload, ev) => setMenu({ kind, payload, x: ev.currentTarget.getBoundingClientRect().left, y: ev.currentTarget.getBoundingClientRect().bottom + 6 })} />)}
+        </div>
+      </div>
+      <div className="shrink-0 border-t border-[#e4e2dc] pt-2 dark:border-neutral-900">
+        <SidebarButton icon={<SettingsIcon />} label="Settings" onClick={() => { setSidebarOpen(false); go('/settings', 'settings'); }} />
       </div>
     </aside>
     <section className="relative flex h-screen min-w-0 flex-col">
@@ -874,13 +949,14 @@ function App() {
         <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400"><ThemeToggle value={themePreference} onChange={setThemePreference} /><span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-neutral-900 dark:text-slate-300">{contextText}</span><span>{status}</span><button type="button" className={'rounded-lg px-3 py-1 font-semibold text-gray-700 hover:bg-gray-200 dark:text-slate-200 dark:hover:bg-neutral-800 ' + (previewPanelOpen && previewTabs.length > 0 ? 'bg-gray-200 dark:bg-neutral-800' : 'bg-gray-100 dark:bg-neutral-900')} onClick={togglePreviewPanel}>Preview{previewTabs.length > 0 ? ' ' + previewTabs.length : ''}</button><button type="button" className={'rounded-lg px-3 py-1 font-semibold text-gray-700 hover:bg-gray-200 dark:text-slate-200 dark:hover:bg-neutral-800 max-[1099px]:hidden ' + (gitPanelHidden ? 'bg-gray-100 dark:bg-neutral-900' : 'bg-gray-200 dark:bg-neutral-800')} onClick={() => setDesktopGitPanelHidden(!gitPanelHidden)}>Git</button><button type="button" className="hidden rounded-lg bg-gray-100 px-3 py-1 font-semibold text-gray-700 hover:bg-gray-200 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-neutral-800 max-[1099px]:block" onClick={() => setGitPanelOpen(true)}>Git</button><button type="button" title="Terminal" aria-label="Terminal" className={'flex h-7 w-7 items-center justify-center rounded-lg ' + (terminalOpen ? 'bg-gray-900 text-white dark:bg-slate-100 dark:text-black' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-neutral-800')} onClick={() => setTerminalOpen(!terminalOpen)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 7 5 5-5 5" /><path d="M12 19h8" /></svg></button></div>
       </header>}
       {view !== 'chat' && <header className="fixed left-[290px] right-0 top-0 z-10 flex h-12 items-center justify-between border-b border-gray-100 bg-white/95 px-4 dark:border-neutral-900 dark:bg-black/95 max-[820px]:left-0">
-        <div className="flex items-center gap-2"><button type="button" className="hidden rounded-lg bg-gray-100 px-2 py-1 text-gray-700 dark:bg-neutral-900 dark:text-slate-200 max-[820px]:block" onClick={() => setSidebarOpen(true)}>☰</button><h1 className="text-xs font-semibold">{view === 'skills' ? 'Skills' : view === 'tools' ? 'Tools' : 'Agents'}</h1></div>
+        <div className="flex items-center gap-2"><button type="button" className="hidden rounded-lg bg-gray-100 px-2 py-1 text-gray-700 dark:bg-neutral-900 dark:text-slate-200 max-[820px]:block" onClick={() => setSidebarOpen(true)}>☰</button><h1 className="text-xs font-semibold">{view === 'skills' ? 'Skills' : view === 'tools' ? 'Tools' : view === 'settings' ? 'Settings' : 'Agents'}</h1></div>
         <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500"><ThemeToggle value={themePreference} onChange={setThemePreference} /><span>π Pi Web</span></div>
       </header>}
       {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} subagentRuns={subagentRuns} openSubagentRun={openSubagentRun} previewTabs={previewTabs} previewOpen={previewPanelOpen} closePreviewTab={closePreviewTab} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} agentOptions={availableChatAgents} selectedAgentId={selectedChatAgentId} setSelectedAgentId={setSelectedChatAgentId} showAgentPicker={emptyChat} />}
       {view === 'skills' && <SkillsView skills={skills} reload={async () => { await loadSkills(); await loadCommands(); }} openModal={setSkillModal} />}
       {view === 'tools' && <ToolsView tools={[...builtinTools, ...tools]} openModal={setToolModal} saveTools={saveTools} customTools={tools} />}
       {view === 'agents' && <AgentsView builtinAgents={resolvedBuiltinAgents} customAgents={agents} openModal={setAgentModal} saveAgents={saveAgents} />}
+      {view === 'settings' && <SettingsView reloadModels={loadModels} />}
     </section>
     {gitPanelVisible && (!gitPanelHidden || gitPanelOpen) && <GitPanel status={gitStatus} branches={gitBranches} busy={gitBusy} mobileOpen={gitPanelOpen} closeMobile={() => setGitPanelOpen(false)} hideDesktop={() => setDesktopGitPanelHidden(true)} refresh={loadGitStatus} commit={openCommitModal} push={() => runGitAction('push')} switchBranch={switchGitBranch} init={() => runGitAction('init')} createRepo={() => runGitAction('create-github-repo')} />}
     {commitModalOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={() => setCommitModalOpen(false)}>

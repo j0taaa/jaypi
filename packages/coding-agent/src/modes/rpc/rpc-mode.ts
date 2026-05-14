@@ -471,6 +471,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "set_env", { keys });
 			}
 
+			case "reload": {
+				await session.reload();
+				return success(id, "reload");
+			}
+
 			// =================================================================
 			// Model
 			// =================================================================

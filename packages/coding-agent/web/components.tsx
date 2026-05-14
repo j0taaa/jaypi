@@ -25,7 +25,10 @@ function NewChatIcon() {
 function SearchIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><g transform="translate(24 0) scale(-1 1)"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></g></svg>;
 }
-function ProjectTree({ project, collapsed, icon, currentSessionPath, onToggle, onOpen, onMenu }: any) {
+function SettingsIcon() {
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9.7 3.4c.6-1.9 4-1.9 4.6 0l.2.7a2.4 2.4 0 0 0 3.1 1.4l.7-.3c1.8-.8 4.2 1.6 3.4 3.4l-.3.7a2.4 2.4 0 0 0 1.4 3.1l.7.2c1.9.6 1.9 4 0 4.6l-.7.2a2.4 2.4 0 0 0-1.4 3.1l.3.7c.8 1.8-1.6 4.2-3.4 3.4l-.7-.3a2.4 2.4 0 0 0-3.1 1.4l-.2.7c-.6 1.9-4 1.9-4.6 0l-.2-.7a2.4 2.4 0 0 0-3.1-1.4l-.7.3c-1.8.8-4.2-1.6-3.4-3.4l.3-.7a2.4 2.4 0 0 0-1.4-3.1l-.7-.2c-1.9-.6-1.9-4 0-4.6l.7-.2a2.4 2.4 0 0 0 1.4-3.1l-.3-.7c-.8-1.8 1.6-4.2 3.4-3.4l.7.3a2.4 2.4 0 0 0 3.1-1.4l.2-.7Z" /><circle cx="12" cy="12" r="3.2" /></svg>;
+}
+function ProjectTree({ project, collapsed, icon, currentSessionPath, sessionStates, onToggle, onOpen, onMenu }: any) {
   const shown = collapsed ? [] : project.sessions.slice(0, 10);
   return <div className="mb-2.5">
     <div className="group mx-1 flex cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs text-[#666] hover:bg-piHover dark:text-slate-300 dark:hover:bg-neutral-900" onClick={onToggle} title={project.cwd}>
@@ -34,10 +37,18 @@ function ProjectTree({ project, collapsed, icon, currentSessionPath, onToggle, o
       <span className="min-w-0 flex-1 truncate">{shortPath(project.cwd)}</span>
       <button className="rounded-md px-1 text-xs leading-none text-gray-500 opacity-0 hover:bg-[#d3d2cd] dark:text-slate-500 dark:hover:bg-neutral-800 group-hover:opacity-100" onClick={(ev) => { ev.stopPropagation(); onMenu('project', project, ev); }}>…</button>
     </div>
-    {shown.map((session: SessionInfo) => <div key={session.path} className={'group ml-0 flex cursor-pointer items-center gap-1.5 rounded-lg py-1.5 pl-8 pr-1.5 text-[#333] hover:bg-piActive dark:text-slate-200 dark:hover:bg-neutral-900 ' + (currentSessionPath === session.path ? 'bg-piActive dark:bg-neutral-900' : '')} onClick={() => onOpen(project, session, true)} title={sessionTitle(session)}>
-      <div className="min-w-0 flex-1 truncate text-[11px]">{sessionTitle(session)}</div><div className="whitespace-nowrap text-[10px] text-piMuted dark:text-slate-500">{relTime(session.modified)}</div>
+    {shown.map((session: SessionInfo) => {
+      const sessionState = sessionStates?.[session.path] || {};
+      const isCurrent = currentSessionPath === session.path;
+      const showUnread = sessionState.unread && !isCurrent;
+      return <div key={session.path} className={'group ml-0 flex cursor-pointer items-center gap-1.5 rounded-lg py-1.5 pl-8 pr-1.5 text-[#333] hover:bg-piActive dark:text-slate-200 dark:hover:bg-neutral-900 ' + (isCurrent ? 'bg-piActive dark:bg-neutral-900' : '')} onClick={() => onOpen(project, session, true)} title={sessionTitle(session)}>
+      <div className="min-w-0 flex-1 truncate text-[11px]">{sessionTitle(session)}</div>
+      {sessionState.generating && <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-piAccent border-t-transparent" title="Generating" aria-label="Generating" />}
+      {showUnread && <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500" title="New answer" aria-label="New answer" />}
+      <div className="whitespace-nowrap text-[10px] text-piMuted dark:text-slate-500">{relTime(session.modified)}</div>
       <button className="rounded-md px-1 text-xs leading-none text-gray-500 opacity-0 hover:bg-[#d3d2cd] dark:text-slate-500 dark:hover:bg-neutral-800 group-hover:opacity-100" onClick={(ev) => { ev.stopPropagation(); onMenu('session', session, ev); }}>…</button>
-    </div>)}
+    </div>;
+    })}
   </div>;
 }
 function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, previewTabs, previewOpen, closePreviewTab, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker, rightRailOpen }: any) {
@@ -664,6 +675,264 @@ function AgentTile({ agent, custom, onEdit, onDelete }: any) {
     <div className="mt-auto flex items-center justify-end gap-3 border-t border-gray-100 pt-3 text-xs text-piAccent dark:border-neutral-900"><span>Edit</span>{onDelete && <span onClick={e => { e.stopPropagation(); onDelete(); }}>Delete</span>}</div>
   </button>;
 }
+function SettingsView({ reloadModels }: any) {
+  const emptyProvider = () => ({
+    provider: '',
+    name: '',
+    baseUrl: '',
+    api: 'openai-completions',
+    authHeader: true,
+    apiKey: '',
+    models: [{ id: '', name: '', contextWindow: 128000, maxTokens: 16384, reasoning: false, input: ['text'] }],
+  });
+  const [data, setData] = useState<any>(null);
+  const [editing, setEditing] = useState<any>(null);
+  const [keyProvider, setKeyProvider] = useState('');
+  const [keyValue, setKeyValue] = useState('');
+  const [oauthLogin, setOauthLogin] = useState<any>(null);
+  const [oauthInput, setOauthInput] = useState('');
+  const [status, setStatus] = useState('');
+  async function load() {
+    setStatus('');
+    const res = await fetch('/api/settings/providers');
+    if (!res.ok) throw new Error(await res.text());
+    const json = await res.json();
+    const nextData = json.data || {};
+    setData(nextData);
+    if (!keyProvider) {
+      const loggedInProvider = (nextData.oauthProviders || []).find((provider: any) => provider.auth?.configured || provider.auth?.source === 'stored');
+      if (loggedInProvider?.id) setKeyProvider(loggedInProvider.id);
+    }
+  }
+  useEffect(() => { load().catch((err: any) => setStatus(String(err.message || err))); }, []);
+  async function saveProvider(ev: any) {
+    ev.preventDefault();
+    setStatus('Saving provider...');
+    const payload = {
+      ...editing,
+      models: (editing.models || []).filter((model: any) => String(model.id || '').trim()),
+    };
+    const res = await fetch('/api/settings/providers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) { setStatus(await res.text()); return; }
+    setEditing(null);
+    await load();
+    await reloadModels?.();
+    setStatus('Saved.');
+  }
+  async function deleteProvider(provider: string) {
+    if (!confirm('Delete provider "' + provider + '"?')) return;
+    setStatus('Deleting provider...');
+    const res = await fetch('/api/settings/providers', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider }) });
+    if (!res.ok) { setStatus(await res.text()); return; }
+    await load();
+    await reloadModels?.();
+    setStatus('Deleted.');
+  }
+  async function saveKey(ev: any) {
+    ev.preventDefault();
+    if (!keyProvider) return;
+    setStatus('Saving key...');
+    const res = await fetch('/api/settings/provider-key', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: keyProvider, apiKey: keyValue }) });
+    if (!res.ok) { setStatus(await res.text()); return; }
+    setKeyValue('');
+    await load();
+    await reloadModels?.();
+    setStatus(keyValue.trim() ? 'Key saved.' : 'Key removed.');
+  }
+  async function removeKey() {
+    if (!keyProvider) return;
+    setStatus('Removing key...');
+    const res = await fetch('/api/settings/provider-key', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: keyProvider, apiKey: '' }) });
+    if (!res.ok) { setStatus(await res.text()); return; }
+    setKeyValue('');
+    await load();
+    await reloadModels?.();
+    setStatus('Key removed.');
+  }
+  async function startOAuth(provider: string) {
+    setStatus('Starting login...');
+    const providerInfo = oauthProviders.find((candidate: any) => candidate.id === provider);
+    setOauthLogin({ provider, providerName: providerInfo?.name || provider, status: 'starting', progress: ['Starting login...'] });
+    const res = await fetch('/api/settings/oauth/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider }) });
+    if (!res.ok) { setStatus(await res.text()); setOauthLogin(null); return; }
+    const json = await res.json();
+    setOauthLogin(json.data);
+    setOauthInput('');
+    setStatus('');
+  }
+  async function answerOAuth(ev: any) {
+    ev.preventDefault();
+    if (!oauthLogin?.id) return;
+    const res = await fetch('/api/settings/oauth/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: oauthLogin.id, value: oauthInput }) });
+    if (!res.ok) { setStatus(await res.text()); return; }
+    setOauthInput('');
+  }
+  async function cancelOAuth() {
+    if (oauthLogin?.id) {
+      await fetch('/api/settings/oauth/cancel', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: oauthLogin.id }) }).catch(() => {});
+    }
+    setOauthLogin(null);
+    setOauthInput('');
+  }
+  function editProvider(provider: any) {
+    setEditing({
+      provider: provider.provider || '',
+      name: provider.name || '',
+      baseUrl: provider.baseUrl || '',
+      api: provider.api || 'openai-completions',
+      authHeader: provider.authHeader !== false,
+      apiKey: '',
+      models: provider.models?.length ? provider.models.map((model: any) => ({ input: ['text'], ...model })) : emptyProvider().models,
+    });
+  }
+  function updateModel(index: number, patch: any) {
+    const models = [...(editing.models || [])];
+    models[index] = { ...models[index], ...patch };
+    setEditing({ ...editing, models });
+  }
+  const fallbackOAuthProviders = [
+    { id: 'openai-codex', name: 'OpenAI Codex', usesCallbackServer: true },
+    { id: 'anthropic', name: 'Anthropic', usesCallbackServer: true },
+    { id: 'github-copilot', name: 'GitHub Copilot', usesCallbackServer: false },
+  ];
+  const builtInProviders = data?.builtInProviders || [];
+  const customProviders = data?.customProviders || [];
+  const oauthProviders = (data?.oauthProviders?.length ? data.oauthProviders : fallbackOAuthProviders).map((provider: any) => {
+    const builtIn = builtInProviders.find((candidate: any) => candidate.id === provider.id);
+    return { ...provider, auth: provider.auth || builtIn?.auth };
+  });
+  const selectedProvider = builtInProviders.find((provider: any) => provider.id === keyProvider) || customProviders.find((provider: any) => provider.provider === keyProvider);
+  const oauthProviderIds = new Set(oauthProviders.map((provider: any) => provider.id));
+  const selectedOAuthProvider = oauthProviders.find((provider: any) => provider.id === keyProvider);
+  const selectedAuth = selectedOAuthProvider?.auth || selectedProvider?.auth;
+  const isAuthConfigured = (auth: any) => auth?.source === 'stored' || auth?.configured === true;
+  const isLoggedIn = isAuthConfigured(selectedAuth);
+  const connectedProviders = oauthProviders.filter((provider: any) => isAuthConfigured(provider.auth));
+  const setupProviders = [
+    ...oauthProviders.map((provider: any) => {
+      const label = provider.id === 'openai-codex' ? 'OpenAI Codex' : (provider.name || provider.id);
+      return { ...provider, value: provider.id, authType: 'oauth', label: isAuthConfigured(provider.auth) ? label + ' (logged in)' : label };
+    }),
+    ...builtInProviders.filter((provider: any) => !oauthProviderIds.has(provider.id)).map((provider: any) => {
+      const label = provider.name || provider.id;
+      return { ...provider, value: provider.id, authType: 'api_key', label: isAuthConfigured(provider.auth) ? label + ' (configured)' : label };
+    }),
+    ...customProviders.map((provider: any) => {
+      const label = provider.name || provider.provider;
+      return { ...provider, value: provider.provider, authType: 'api_key', label: isAuthConfigured(provider.auth) ? label + ' (configured)' : label };
+    }),
+  ];
+  useEffect(() => {
+    if (!oauthLogin?.id || oauthLogin.status === 'complete' || oauthLogin.status === 'error') return;
+    const timer = window.setInterval(async () => {
+      const res = await fetch('/api/settings/oauth/status?id=' + encodeURIComponent(oauthLogin.id));
+      if (!res.ok) return;
+      const json = await res.json();
+      setOauthLogin(json.data);
+      if (json.data?.status === 'complete') {
+        await load();
+        await reloadModels?.();
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [oauthLogin?.id, oauthLogin?.status]);
+  return <main className="flex-1 overflow-auto px-6 pb-10 pt-20 dark:bg-black"><div className="mx-auto max-w-6xl space-y-6">
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div><h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Settings</h2><div className="mt-1 text-xs text-gray-400 dark:text-slate-500">{data?.path || 'models.json'}</div></div>
+      <button type="button" className="w-fit rounded-xl bg-piAccent px-4 py-2 text-sm font-bold text-white" onClick={() => setEditing(emptyProvider())}>Add custom provider</button>
+    </div>
+    {status && <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-xs text-gray-600 dark:border-neutral-800 dark:bg-neutral-950 dark:text-slate-300">{status}</div>}
+    <section className="rounded-2xl border border-gray-200 bg-white p-4 text-sm dark:border-neutral-800 dark:bg-neutral-950">
+      <h3 className="mb-3 text-sm font-bold">Provider setup</h3>
+      {connectedProviders.length > 0 && <div className="mb-3 flex flex-wrap gap-2">
+        {connectedProviders.map((provider: any) => <button key={provider.id} type="button" className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700 dark:bg-green-400/10 dark:text-green-300" onClick={() => setKeyProvider(provider.id)}>{provider.id === 'openai-codex' ? 'OpenAI Codex' : (provider.name || provider.id)} · Logged in</button>)}
+      </div>}
+      <form className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]" onSubmit={saveKey}>
+        <label className="block"><span className="mb-1 block text-xs font-semibold text-gray-500 dark:text-slate-400">Provider</span><select className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" value={keyProvider} onChange={e => { setKeyProvider(e.target.value); setKeyValue(''); }}>
+          <option value="">Select provider</option>
+          {setupProviders.map((provider: any) => <option key={provider.authType + ':' + provider.value} value={provider.value}>{provider.label}</option>)}
+        </select></label>
+        {selectedOAuthProvider ? <div className="flex items-end gap-2"><button type="button" className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white dark:bg-slate-100 dark:text-black" onClick={() => startOAuth(selectedOAuthProvider.id)}>{isLoggedIn ? 'Reconnect' : 'Sign in'}</button>{isLoggedIn && <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 dark:bg-green-400/10 dark:text-green-300">Logged in</span>}</div> : <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+          <label className="block"><span className="mb-1 block text-xs font-semibold text-gray-500 dark:text-slate-400">API key</span><input className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" type="password" value={keyValue} onChange={e => setKeyValue(e.target.value)} placeholder={selectedProvider?.auth?.configured ? 'Stored' : 'Not configured'} /></label>
+          <button type="submit" className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-slate-100 dark:text-black" disabled={!keyProvider || !keyValue.trim()}>Save</button>
+        </div>}
+      </form>
+      {keyProvider && <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-gray-400 dark:text-slate-500">
+        <span>{isLoggedIn ? 'Already logged in. Models for this provider load from Pi automatically.' : selectedAuth?.source ? 'Source: ' + selectedAuth.source : 'No stored credentials'}</span>
+        {!selectedOAuthProvider && <button type="button" className="font-semibold text-red-600 disabled:opacity-50 dark:text-red-300" disabled={!keyProvider} onClick={removeKey}>Remove key</button>}
+      </div>}
+    </section>
+    <section>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between"><h3 className="text-sm font-bold">Custom providers</h3><span className="text-xs text-gray-400">{customProviders.length}</span></div>
+        {customProviders.length === 0 ? <Empty>No custom providers configured.</Empty> : customProviders.map((provider: any) => <div key={provider.provider} className="rounded-2xl border border-gray-200 bg-white p-4 text-sm dark:border-neutral-800 dark:bg-neutral-950">
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="font-bold text-gray-900 dark:text-slate-100">{provider.name || provider.provider}</div><div className="truncate text-xs text-gray-400 dark:text-slate-500">{provider.provider} · {provider.api || 'model API'} · {provider.baseUrl || 'model URLs'}</div></div><div className="flex gap-2"><button type="button" className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold dark:bg-neutral-900" onClick={() => editProvider(provider)}>Edit</button><button type="button" className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300" onClick={() => deleteProvider(provider.provider)}>Delete</button></div></div>
+          <div className="mt-3 flex flex-wrap gap-2">{(provider.models || []).map((model: any) => <span key={model.id} className="rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-600 dark:bg-neutral-900 dark:text-slate-300">{model.name || model.id}</span>)}</div>
+        </div>)}
+      </div>
+    </section>
+    {editing && <Modal onClose={() => setEditing(null)}><form onSubmit={saveProvider}>
+      <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5 dark:border-neutral-900">
+        <div><h2 className="text-base font-bold">{editing.provider ? 'Edit provider' : 'Add provider'}</h2><p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Configure an OpenAI-compatible, Anthropic-compatible, Google, or Mistral endpoint.</p></div>
+        <button type="button" aria-label="Close" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-lg leading-none text-gray-600 hover:bg-gray-200 dark:bg-neutral-900 dark:text-slate-300 dark:hover:bg-neutral-800" onClick={() => setEditing(null)}>×</button>
+      </div>
+      <div className="max-h-[70vh] space-y-5 overflow-auto p-5 text-sm">
+        <section className="space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-slate-500">Provider</h3>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Field label="Provider id"><input required className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" placeholder="local-openai" value={editing.provider} onChange={e => setEditing({ ...editing, provider: e.target.value })} /></Field>
+            <Field label="Display name"><input className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" placeholder="Local OpenAI" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} /></Field>
+            <Field label="API"><select className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" value={editing.api} onChange={e => setEditing({ ...editing, api: e.target.value })}>{(data?.apis || []).map((api: string) => <option key={api} value={api}>{api}</option>)}</select></Field>
+            <Field label="Base URL"><input required className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" placeholder="http://localhost:11434/v1" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} /></Field>
+          </div>
+        </section>
+        <section className="space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-slate-500">Authentication</h3>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+            <Field label="API key"><input className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" type="password" placeholder="Leave blank to keep existing key" value={editing.apiKey} onChange={e => setEditing({ ...editing, apiKey: e.target.value })} /></Field>
+            <label className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 dark:border-neutral-800 dark:text-slate-300"><input type="checkbox" checked={!!editing.authHeader} onChange={e => setEditing({ ...editing, authHeader: e.target.checked })} /> Authorization bearer header</label>
+          </div>
+        </section>
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3"><h3 className="text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-slate-500">Models</h3><button type="button" className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold dark:bg-neutral-900" onClick={() => setEditing({ ...editing, models: [...(editing.models || []), { id: '', name: '', contextWindow: 128000, maxTokens: 16384, reasoning: false, input: ['text'] }] })}>Add model</button></div>
+          <div className="space-y-3">
+            {(editing.models || []).map((model: any, index: number) => <div key={index} className="rounded-xl border border-gray-200 p-3 dark:border-neutral-800">
+              <div className="mb-3 flex items-center justify-between gap-3"><div className="text-xs font-bold text-gray-700 dark:text-slate-200">Model {index + 1}</div><button type="button" className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300" onClick={() => setEditing({ ...editing, models: editing.models.filter((_: any, modelIndex: number) => modelIndex !== index) })}>Remove</button></div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Field label="Model id"><input required className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" placeholder="llama3.1" value={model.id || ''} onChange={e => updateModel(index, { id: e.target.value })} /></Field>
+                <Field label="Display name"><input className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" placeholder="Llama 3.1" value={model.name || ''} onChange={e => updateModel(index, { name: e.target.value })} /></Field>
+                <Field label="Context window"><input className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" type="number" min="1" value={model.contextWindow || ''} onChange={e => updateModel(index, { contextWindow: Number(e.target.value) })} /></Field>
+                <Field label="Max output tokens"><input className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" type="number" min="1" value={model.maxTokens || ''} onChange={e => updateModel(index, { maxTokens: Number(e.target.value) })} /></Field>
+              </div>
+            </div>)}
+          </div>
+        </section>
+      </div>
+      <div className="flex justify-end gap-2 border-t border-gray-200 p-4 dark:border-neutral-900"><button type="button" className="rounded-xl bg-gray-100 px-4 py-2 text-sm font-semibold dark:bg-neutral-900" onClick={() => setEditing(null)}>Cancel</button><button type="submit" className="rounded-xl bg-piAccent px-4 py-2 text-sm font-bold text-white">Save provider</button></div>
+    </form></Modal>}
+    {oauthLogin && <Modal onClose={cancelOAuth}><div>
+      <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5 dark:border-neutral-900">
+        <div><h2 className="text-base font-bold">{oauthLogin.providerName || oauthLogin.provider}</h2><p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Status: {oauthLogin.status}</p></div>
+        <button type="button" aria-label="Close" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-lg leading-none text-gray-600 hover:bg-gray-200 dark:bg-neutral-900 dark:text-slate-300 dark:hover:bg-neutral-800" onClick={cancelOAuth}>×</button>
+      </div>
+      <div className="space-y-4 p-5 text-sm">
+        {oauthLogin.auth?.url && <div className="rounded-xl border border-gray-200 p-3 dark:border-neutral-800">
+          <div className="mb-2 text-xs font-bold text-gray-500 dark:text-slate-400">Authentication URL</div>
+          <a className="break-all text-xs font-semibold text-piAccent" href={oauthLogin.auth.url} target="_blank" rel="noreferrer">{oauthLogin.auth.url}</a>
+          {oauthLogin.auth.instructions && <div className="mt-2 whitespace-pre-wrap text-xs text-gray-500 dark:text-slate-400">{oauthLogin.auth.instructions}</div>}
+        </div>}
+        {oauthLogin.progress?.length > 0 && <div className="rounded-xl bg-gray-50 p-3 text-xs text-gray-600 dark:bg-black dark:text-slate-300">{oauthLogin.progress.map((line: string, index: number) => <div key={index}>{line}</div>)}</div>}
+        {oauthLogin.prompt && <form className="space-y-3" onSubmit={answerOAuth}>
+          <Field label={oauthLogin.prompt.message}><input autoFocus className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black" placeholder={oauthLogin.prompt.placeholder || ''} value={oauthInput} onChange={e => setOauthInput(e.target.value)} /></Field>
+          <div className="flex justify-end"><button type="submit" className="rounded-xl bg-piAccent px-4 py-2 text-sm font-bold text-white" disabled={!oauthLogin.prompt.allowEmpty && !oauthInput.trim()}>Continue</button></div>
+        </form>}
+        {oauthLogin.status === 'complete' && <div className="rounded-xl bg-green-50 p-3 text-xs font-semibold text-green-700 dark:bg-green-400/10 dark:text-green-300">Login complete.</div>}
+        {oauthLogin.status === 'error' && <div className="rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">{oauthLogin.error || 'Login failed.'}</div>}
+      </div>
+      <div className="flex justify-end border-t border-gray-200 p-4 dark:border-neutral-900"><button type="button" className="rounded-xl bg-gray-100 px-4 py-2 text-sm font-semibold dark:bg-neutral-900" onClick={cancelOAuth}>{oauthLogin.status === 'complete' ? 'Done' : 'Cancel'}</button></div>
+    </div></Modal>}
+  </div></main>;
+}
 function Page({ title, action, onAction, children }: any) { return <main className="flex-1 overflow-auto px-6 pb-10 pt-20 dark:bg-black"><div className="mx-auto max-w-4xl"><section><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">{title}</h2><button className="rounded-xl bg-piAccent px-4 py-2 text-sm font-bold text-white" onClick={onAction}>{action}</button></div><div className="space-y-3">{children}</div></section></div></main>; }
 function Empty({ children }: any) { return <div className="rounded-2xl border border-gray-200 bg-white p-5 text-gray-500 dark:border-neutral-800 dark:bg-neutral-950 dark:text-slate-400">{children}</div>; }
 function Card({ icon, title, desc, meta, content, badge, actions }: any) { const [open, setOpen] = useState(false); return <div className="flex items-start gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-sm dark:border-neutral-800 dark:bg-neutral-950"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-piAccent text-sm font-bold text-white">{icon}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2 font-bold">{title}<span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500 dark:bg-neutral-900 dark:text-slate-400">{badge}</span></div><div className="mt-1 text-xs text-gray-500 dark:text-slate-400">{desc || 'No description'}</div>{meta && <div className="mt-1 truncate text-[11px] text-gray-400 dark:text-slate-500">{meta}</div>}<div className="mt-3 flex gap-2 text-xs text-piAccent [&>button]:rounded-lg [&>button]:bg-gray-100 [&>button]:px-3 [&>button]:py-1 dark:[&>button]:bg-neutral-900"><button onClick={() => setOpen(!open)}>{open ? 'Collapse' : 'Expand'}</button>{actions}</div>{open && <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-xl bg-gray-50 p-3 text-[11px] dark:bg-black">{content}</pre>}</div></div>; }
@@ -786,6 +1055,7 @@ function Field({ label, children }: any) { return <label className="block"><span
   SidebarButton,
   NewChatIcon,
   SearchIcon,
+  SettingsIcon,
   ProjectTree,
   ChatView,
   TerminalPane,
@@ -813,6 +1083,7 @@ function Field({ label, children }: any) { return <label className="block"><span
   ToolTile,
   AgentsView,
   AgentTile,
+  SettingsView,
   Page,
   Empty,
   Card,

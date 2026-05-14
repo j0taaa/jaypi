@@ -27,7 +27,7 @@ type ChatItem = {
   args?: any;
 };
 
-type ViewName = 'chat' | 'agents' | 'skills' | 'tools';
+type ViewName = 'chat' | 'agents' | 'skills' | 'tools' | 'settings';
 
 (() => {
 const React = (window as any).React;
@@ -129,6 +129,7 @@ function routeInfo(pathname = location.pathname) {
   if (segments[0] === 'skills') return { page: 'skills' };
   if (segments[0] === 'tools') return { page: 'tools' };
   if (segments[0] === 'agents') return { page: 'agents' };
+  if (segments[0] === 'settings') return { page: 'settings' };
   if (segments.length >= 2) return { page: 'conversation', projectId: segments[0], conversationId: segments[1] };
   return { page: 'chat' };
 }

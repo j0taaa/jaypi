@@ -1,12 +1,15 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as http from "node:http";
 import { homedir, networkInterfaces } from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getAgentDir } from "../../config.js";
+import { getProviders } from "@mariozechner/pi-ai";
+import { getAgentDir, getAuthPath, getModelsPath } from "../../config.js";
+import { AuthStorage } from "../../core/auth-storage.js";
 import { estimateContextTokens } from "../../core/compaction/index.js";
-import { SessionManager } from "../../core/session-manager.js";
+import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
+import { type SessionInfo, SessionManager } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { assertHostAllowed, parseWebArgs, usage } from "./args.js";
@@ -53,6 +56,7 @@ import type {
 	WebEvent,
 	WebOptions,
 	WebRpcResponse,
+	WebRpcState,
 } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -68,6 +72,54 @@ interface PendingQuestion {
 	options: AskQuestionOption[];
 }
 
+interface WebModelConfig {
+	id?: string;
+	name?: string;
+	api?: string;
+	baseUrl?: string;
+	reasoning?: boolean;
+	input?: string[];
+	contextWindow?: number;
+	maxTokens?: number;
+}
+
+interface WebProviderConfig {
+	name?: string;
+	baseUrl?: string;
+	api?: string;
+	apiKey?: string;
+	authHeader?: boolean;
+	models?: WebModelConfig[];
+}
+
+interface WebModelsConfig {
+	providers?: Record<string, WebProviderConfig>;
+}
+
+interface SaveProviderRequest extends WebProviderConfig {
+	provider: string;
+}
+
+interface WebOAuthPromptState {
+	message: string;
+	placeholder?: string;
+	allowEmpty?: boolean;
+	kind: "prompt" | "manual_code";
+}
+
+interface WebOAuthLoginState {
+	id: string;
+	provider: string;
+	providerName: string;
+	status: "starting" | "auth" | "prompt" | "complete" | "error";
+	auth?: { url: string; instructions?: string };
+	prompt?: WebOAuthPromptState;
+	progress: string[];
+	error?: string;
+	resolvePrompt?: (value: string) => void;
+	rejectPrompt?: (error: Error) => void;
+}
+
 export { assertHostAllowed, isLoopbackHost, parseWebArgs } from "./args.js";
 export { TerminalManager, TerminalUnavailableError } from "./terminal.js";
 
@@ -81,6 +133,154 @@ export async function runWebMode(args: string[] = []): Promise<void> {
 	await startWebServer(options);
 }
 
+async function readModelsConfig(): Promise<WebModelsConfig> {
+	try {
+		const content = await fs.readFile(getModelsPath(), "utf-8");
+		const parsed = JSON.parse(content) as WebModelsConfig;
+		return {
+			...parsed,
+			providers: parsed.providers && typeof parsed.providers === "object" ? parsed.providers : {},
+		};
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { providers: {} };
+		throw error;
+	}
+}
+
+async function writeModelsConfig(config: WebModelsConfig): Promise<void> {
+	const modelsPath = getModelsPath();
+	await fs.mkdir(path.dirname(modelsPath), { recursive: true, mode: 0o700 });
+	await fs.writeFile(
+		modelsPath,
+		`${JSON.stringify({ ...config, providers: config.providers ?? {} }, null, 2)}\n`,
+		"utf-8",
+	);
+}
+
+function sanitizeProviderConfig(config: WebProviderConfig): WebProviderConfig {
+	const sanitized: WebProviderConfig = {};
+	if (config.name?.trim()) sanitized.name = config.name.trim();
+	if (config.baseUrl?.trim()) sanitized.baseUrl = config.baseUrl.trim();
+	if (config.api?.trim()) sanitized.api = config.api.trim();
+	if (config.authHeader !== undefined) sanitized.authHeader = !!config.authHeader;
+	const models = (config.models ?? [])
+		.map((model): WebModelConfig => {
+			const next: WebModelConfig = {};
+			if (model.id?.trim()) next.id = model.id.trim();
+			if (model.name?.trim()) next.name = model.name.trim();
+			if (model.api?.trim()) next.api = model.api.trim();
+			if (model.baseUrl?.trim()) next.baseUrl = model.baseUrl.trim();
+			if (model.reasoning !== undefined) next.reasoning = !!model.reasoning;
+			if (Array.isArray(model.input)) {
+				const input = model.input.filter((item) => item === "text" || item === "image");
+				if (input.length > 0) next.input = input;
+			}
+			if (typeof model.contextWindow === "number" && Number.isFinite(model.contextWindow)) {
+				next.contextWindow = Math.max(1, Math.floor(model.contextWindow));
+			}
+			if (typeof model.maxTokens === "number" && Number.isFinite(model.maxTokens)) {
+				next.maxTokens = Math.max(1, Math.floor(model.maxTokens));
+			}
+			return next;
+		})
+		.filter((model) => model.id);
+	if (models.length > 0) sanitized.models = models;
+	return sanitized;
+}
+
+async function listSettingsProviders(): Promise<Record<string, unknown>> {
+	const modelsConfig = await readModelsConfig();
+	const authStorage = AuthStorage.create(getAuthPath());
+	const builtInProviderIds = new Set<string>(getProviders());
+	const builtInProviders = [...builtInProviderIds].map((provider) => ({
+		id: provider,
+		name: BUILT_IN_PROVIDER_DISPLAY_NAMES[provider] ?? provider,
+		builtin: true,
+		auth: authStorage.getAuthStatus(provider),
+	}));
+	const customProviders = Object.entries(modelsConfig.providers ?? {}).map(([provider, config]) => {
+		const { apiKey: _apiKey, ...safeConfig } = config;
+		return {
+			provider,
+			...safeConfig,
+			builtin: builtInProviderIds.has(provider),
+			hasModelsJsonKey: !!config.apiKey,
+			auth: authStorage.getAuthStatus(provider),
+		};
+	});
+	return {
+		success: true,
+		data: {
+			path: getModelsPath(),
+			authPath: getAuthPath(),
+			oauthProviders: authStorage.getOAuthProviders().map((provider) => ({
+				id: provider.id,
+				name: provider.name,
+				usesCallbackServer: provider.usesCallbackServer ?? false,
+				auth: authStorage.getAuthStatus(provider.id),
+			})),
+			apis: [
+				"openai-completions",
+				"openai-responses",
+				"anthropic-messages",
+				"google-generative-ai",
+				"mistral-conversations",
+			],
+			builtInProviders,
+			customProviders,
+		},
+	};
+}
+
+async function saveSettingsProvider(input: SaveProviderRequest): Promise<Record<string, unknown>> {
+	const provider = input.provider.trim();
+	if (!provider) throw new HttpError(400, "Missing provider");
+	const nextConfig = sanitizeProviderConfig(input);
+	if (!nextConfig.baseUrl && !nextConfig.models?.length)
+		throw new HttpError(400, "Provider needs a base URL or models");
+	if (nextConfig.models?.length && !nextConfig.api && nextConfig.models.some((model) => !model.api)) {
+		throw new HttpError(400, "Set a provider API or per-model API");
+	}
+	const authStorage = AuthStorage.create(getAuthPath());
+	const builtInProviderIds = new Set<string>(getProviders());
+	if (
+		nextConfig.models?.length &&
+		!builtInProviderIds.has(provider) &&
+		!input.apiKey?.trim() &&
+		!authStorage.hasAuth(provider)
+	) {
+		throw new HttpError(400, "Custom providers with models need an API key. Local providers can use a placeholder.");
+	}
+	const modelsConfig = await readModelsConfig();
+	modelsConfig.providers = { ...(modelsConfig.providers ?? {}), [provider]: nextConfig };
+	await writeModelsConfig(modelsConfig);
+	if (input.apiKey?.trim()) {
+		authStorage.set(provider, { type: "api_key", key: input.apiKey.trim() });
+	}
+	return { success: true, data: { provider } };
+}
+
+async function deleteSettingsProvider(provider: string): Promise<Record<string, unknown>> {
+	const providerId = provider.trim();
+	if (!providerId) throw new HttpError(400, "Missing provider");
+	const modelsConfig = await readModelsConfig();
+	if (modelsConfig.providers) delete modelsConfig.providers[providerId];
+	await writeModelsConfig(modelsConfig);
+	return { success: true, data: { provider: providerId } };
+}
+
+async function saveProviderApiKey(provider: string, apiKey: string): Promise<Record<string, unknown>> {
+	const providerId = provider.trim();
+	if (!providerId) throw new HttpError(400, "Missing provider");
+	const authStorage = AuthStorage.create(getAuthPath());
+	if (apiKey.trim()) {
+		authStorage.set(providerId, { type: "api_key", key: apiKey.trim() });
+	} else {
+		authStorage.remove(providerId);
+	}
+	return { success: true, data: { provider: providerId } };
+}
+
 async function startWebServer(options: WebOptions): Promise<void> {
 	const token = options.token?.trim() || "";
 	const clients = new Set<http.ServerResponse>();
@@ -92,6 +292,7 @@ async function startWebServer(options: WebOptions): Promise<void> {
 	let progressTrackerUrl = "";
 	let subagentSessionUrl = "";
 	let rpc = undefined as unknown as RpcBridge;
+	const oauthLogins = new Map<string, WebOAuthLoginState>();
 	const terminalManager = new TerminalManager({ broadcast });
 	const progressTrackerManager = new ProgressTrackerManager(broadcast);
 	const gitProjectManager = new GitProjectManager(broadcast);
@@ -136,6 +337,104 @@ async function startWebServer(options: WebOptions): Promise<void> {
 	function syncProcessWebEnv(): void {
 		for (const [key, value] of Object.entries(webEnv())) {
 			if (value) process.env[key] = value;
+		}
+	}
+
+	function serializeOAuthLogin(state: WebOAuthLoginState): Record<string, unknown> {
+		return {
+			id: state.id,
+			provider: state.provider,
+			providerName: state.providerName,
+			status: state.status,
+			auth: state.auth,
+			prompt: state.prompt,
+			progress: state.progress,
+			error: state.error,
+		};
+	}
+
+	function waitForOAuthPrompt(state: WebOAuthLoginState, prompt: WebOAuthPromptState): Promise<string> {
+		state.status = "prompt";
+		state.prompt = prompt;
+		return new Promise((resolve, reject) => {
+			state.resolvePrompt = (value) => {
+				state.prompt = undefined;
+				state.resolvePrompt = undefined;
+				state.rejectPrompt = undefined;
+				resolve(value);
+			};
+			state.rejectPrompt = (error) => {
+				state.prompt = undefined;
+				state.resolvePrompt = undefined;
+				state.rejectPrompt = undefined;
+				reject(error);
+			};
+		});
+	}
+
+	function startOAuthLogin(providerId: string): WebOAuthLoginState {
+		const authStorage = AuthStorage.create(getAuthPath());
+		const provider = authStorage.getOAuthProviders().find((candidate) => candidate.id === providerId);
+		if (!provider) throw new HttpError(400, `Provider "${providerId}" does not have a built-in login flow`);
+
+		const state: WebOAuthLoginState = {
+			id: crypto.randomUUID(),
+			provider: provider.id,
+			providerName: provider.name,
+			status: "starting",
+			progress: [],
+		};
+		oauthLogins.set(state.id, state);
+
+		void authStorage
+			.login(provider.id, {
+				onAuth: (info) => {
+					state.status = "auth";
+					state.auth = info;
+					openBrowser(info.url);
+				},
+				onPrompt: (prompt) =>
+					waitForOAuthPrompt(state, {
+						message: prompt.message,
+						placeholder: prompt.placeholder,
+						allowEmpty: prompt.allowEmpty,
+						kind: "prompt",
+					}),
+				onProgress: (message) => {
+					state.progress.push(message);
+					if (state.progress.length > 20) state.progress.shift();
+				},
+				onManualCodeInput: () =>
+					waitForOAuthPrompt(state, {
+						message: "Paste the redirect URL or authorization code:",
+						placeholder: "http://127.0.0.1:1455/...",
+						allowEmpty: false,
+						kind: "manual_code",
+					}),
+			})
+			.then(async () => {
+				state.status = "complete";
+				state.prompt = undefined;
+				state.progress.push(`Logged in to ${provider.name}`);
+				await rpc.send({ type: "reload" }, 120000);
+			})
+			.catch((error: unknown) => {
+				state.status = "error";
+				state.prompt = undefined;
+				state.error = error instanceof Error ? error.message : String(error);
+			});
+
+		return state;
+	}
+
+	function openBrowser(url: string): void {
+		const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+		const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+		try {
+			const child = spawn(command, args, { detached: true, stdio: "ignore" });
+			child.unref();
+		} catch {
+			// The UI also displays the URL for manual opening.
 		}
 	}
 
@@ -233,12 +532,12 @@ async function startWebServer(options: WebOptions): Promise<void> {
 			return;
 		}
 		if (req.method === "GET" && url.pathname === "/api/projects") {
-			const sessions = await SessionManager.listAll();
+			const sessions = await sessionsWithActive();
 			sendJson(res, { projects: groupSessionsByProject(sessions, activeCwd) });
 			return;
 		}
 		if (req.method === "GET" && url.pathname === "/api/sessions") {
-			sendJson(res, { sessions: await SessionManager.listAll() });
+			sendJson(res, { sessions: await sessionsWithActive() });
 			return;
 		}
 		if (req.method === "GET" && url.pathname === "/api/browse") {
@@ -266,6 +565,65 @@ async function startWebServer(options: WebOptions): Promise<void> {
 		}
 		if (req.method === "GET" && url.pathname === "/api/models") {
 			sendJson(res, await rpc.send({ type: "get_available_models" }));
+			return;
+		}
+		if (req.method === "GET" && url.pathname === "/api/settings/providers") {
+			sendJson(res, await listSettingsProviders());
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/settings/providers") {
+			const body = await readJsonBody<SaveProviderRequest>(req, 512 * 1024);
+			const response = await saveSettingsProvider(body);
+			await rpc.send({ type: "reload" }, 120000);
+			sendJson(res, response);
+			return;
+		}
+		if (req.method === "DELETE" && url.pathname === "/api/settings/providers") {
+			const body = await readJsonBody<{ provider?: string }>(req);
+			const response = await deleteSettingsProvider(requireString(body.provider, "provider"));
+			await rpc.send({ type: "reload" }, 120000);
+			sendJson(res, response);
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/settings/provider-key") {
+			const body = await readJsonBody<{ provider?: string; apiKey?: string }>(req, 64 * 1024);
+			const response = await saveProviderApiKey(
+				requireString(body.provider, "provider"),
+				requireString(body.apiKey, "apiKey"),
+			);
+			await rpc.send({ type: "reload" }, 120000);
+			sendJson(res, response);
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/settings/oauth/start") {
+			const body = await readJsonBody<{ provider?: string }>(req);
+			const state = startOAuthLogin(requireString(body.provider, "provider"));
+			sendJson(res, { success: true, data: serializeOAuthLogin(state) });
+			return;
+		}
+		if (req.method === "GET" && url.pathname === "/api/settings/oauth/status") {
+			const id = requireString(url.searchParams.get("id"), "id");
+			const state = oauthLogins.get(id);
+			if (!state) throw new HttpError(404, "OAuth login not found");
+			sendJson(res, { success: true, data: serializeOAuthLogin(state) });
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/settings/oauth/answer") {
+			const body = await readJsonBody<{ id?: string; value?: string }>(req, 64 * 1024);
+			const state = oauthLogins.get(requireString(body.id, "id"));
+			if (!state) throw new HttpError(404, "OAuth login not found");
+			if (!state.resolvePrompt) throw new HttpError(400, "OAuth login is not waiting for input");
+			state.resolvePrompt(requireString(body.value, "value"));
+			sendJson(res, { success: true });
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/settings/oauth/cancel") {
+			const body = await readJsonBody<{ id?: string }>(req);
+			const id = requireString(body.id, "id");
+			const state = oauthLogins.get(id);
+			if (state?.rejectPrompt) state.rejectPrompt(new Error("Login cancelled"));
+			oauthLogins.delete(id);
+			sendJson(res, { success: true });
 			return;
 		}
 		if (req.method === "POST" && url.pathname === "/api/model") {
@@ -628,6 +986,69 @@ async function startWebServer(options: WebOptions): Promise<void> {
 		pending.resolve(response);
 	}
 
+	function contentToText(content: unknown): string {
+		if (typeof content === "string") return content;
+		if (!Array.isArray(content)) return "";
+		return content
+			.map((part) => {
+				if (!part || typeof part !== "object") return "";
+				const record = part as Record<string, unknown>;
+				return typeof record.text === "string"
+					? record.text
+					: typeof record.content === "string"
+						? record.content
+						: typeof record.thinking === "string"
+							? record.thinking
+							: "";
+			})
+			.filter(Boolean)
+			.join("\n");
+	}
+
+	function firstUserMessage(messages: unknown[]): string {
+		for (const message of messages) {
+			if (!message || typeof message !== "object") continue;
+			const record = message as Record<string, unknown>;
+			if (record.role !== "user") continue;
+			const text = contentToText(record.content).trim();
+			if (text) return text;
+		}
+		return "(no messages)";
+	}
+
+	async function sessionsWithActive(): Promise<SessionInfo[]> {
+		const sessions = await SessionManager.listAll();
+		const stateResponse = await rpc
+			.send<WebRpcResponse & { data?: WebRpcState }>({ type: "get_state" })
+			.catch(() => null);
+		if (!stateResponse?.success || !stateResponse.data?.sessionFile) return sessions;
+
+		const sessionPath = path.resolve(stateResponse.data.sessionFile);
+		if (sessions.some((session) => path.resolve(session.path) === sessionPath)) return sessions;
+
+		const messagesResponse = await rpc
+			.send<WebRpcResponse & { data?: { messages?: unknown[] } }>({ type: "get_messages" })
+			.catch(() => null);
+		const messages = messagesResponse?.success ? (messagesResponse.data?.messages ?? []) : [];
+		const now = new Date();
+		return [
+			{
+				path: sessionPath,
+				id: stateResponse.data.sessionId,
+				cwd: activeCwd,
+				name: stateResponse.data.sessionName,
+				created: now,
+				modified: now,
+				messageCount: stateResponse.data.messageCount,
+				firstMessage: firstUserMessage(messages),
+				allMessagesText: messages
+					.map((message) => contentToText((message as Record<string, unknown>)?.content))
+					.join(" "),
+			},
+			...sessions,
+		];
+	}
+
 	async function currentSessionFile(): Promise<string | null> {
 		const response = await rpc.send<WebRpcResponse & { data?: { sessionFile?: string } }>({ type: "get_state" });
 		return response.success ? response.data?.sessionFile || null : null;
@@ -928,20 +1349,4 @@ function webUrls(host: string, port: number, token: string): { local: string; ne
 				.map((item) => `http://${item.address}:${port}${suffix}`)
 		: [];
 	return { local: `http://${localHost}:${port}${suffix}`, network };
-}
-
-function openBrowser(url: string): void {
-	try {
-		if (process.platform === "darwin") spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
-		else if (process.platform === "win32")
-			spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-		else {
-			const graphical = process.env.DISPLAY || process.env.WAYLAND_DISPLAY || process.env.WSL_DISTRO_NAME;
-			const hasXdg =
-				spawnSync("sh", ["-lc", "command -v xdg-open >/dev/null 2>&1"], { stdio: "ignore" }).status === 0;
-			if (graphical && hasXdg) spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
-		}
-	} catch {
-		// Browser opening is best-effort only.
-	}
 }

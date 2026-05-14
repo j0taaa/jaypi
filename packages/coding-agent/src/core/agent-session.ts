@@ -2389,7 +2389,9 @@ export class AgentSession {
 		const previousFlagValues = this._extensionRunner.getFlagValues();
 		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
 		await this.settingsManager.reload();
+		this._modelRegistry.authStorage.reload();
 		resetApiProviders();
+		this._modelRegistry.refresh();
 		await this._resourceLoader.reload();
 		this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),
@@ -2406,6 +2408,7 @@ export class AgentSession {
 			await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
 			await this.extendResourcesFromExtensions("reload");
 		}
+		this._refreshCurrentModelFromRegistry();
 	}
 
 	// =========================================================================

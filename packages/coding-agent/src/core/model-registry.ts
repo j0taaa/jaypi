@@ -520,8 +520,10 @@ export class ModelRegistry {
 				if (!providerConfig.baseUrl) {
 					throw new Error(`Provider ${providerName}: "baseUrl" is required when defining custom models.`);
 				}
-				if (!providerConfig.apiKey) {
-					throw new Error(`Provider ${providerName}: "apiKey" is required when defining custom models.`);
+				if (!providerConfig.apiKey && !this.authStorage.hasAuth(providerName)) {
+					throw new Error(
+						`Provider ${providerName}: "apiKey" is required when defining custom models unless auth.json has credentials.`,
+					);
 				}
 			}
 			// Built-in providers with custom models: baseUrl/apiKey/api are optional,
