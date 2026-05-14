@@ -51,7 +51,7 @@ function ProjectTree({ project, collapsed, icon, currentSessionPath, sessionStat
     })}
   </div>;
 }
-function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, previewTabs, previewOpen, closePreviewTab, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker, rightRailOpen }: any) {
+function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, previewTabs, previewOpen, closePreviewTab, closePreviewPanel, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker, rightRailOpen }: any) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -183,7 +183,7 @@ function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessa
       {renderStart > 0 && <div className="py-3 text-center text-xs text-gray-400">Scroll up to load older messages</div>}
       {messages.slice(renderStart).map((item: ChatItem) => <Message key={item.id} item={item} answerQuestion={answerQuestion} cwd={state?.cwd} />)}
     </div></main>
-    <PreviewTabsPanel tabs={previewTabs || []} open={previewOpen} closeTab={closePreviewTab} composerHeight={composerHeight} />
+    <PreviewTabsPanel tabs={previewTabs || []} open={previewOpen} closeTab={closePreviewTab} closePanel={closePreviewPanel} composerHeight={composerHeight} />
     <form ref={formRef} onSubmit={submitPrompt} className={'fixed bottom-0 left-[290px] bg-gradient-to-t from-white via-white px-6 pb-4 pt-3 dark:from-black dark:via-black max-[820px]:left-0 ' + (rightRailOpen ? 'right-0 min-[1100px]:right-[520px]' : 'right-0')}><div className="mx-auto w-full max-w-6xl">
       {progressTracker && <ProgressTrackerPanel tracker={progressTracker} onRemove={removeProgressTracker} />}
       {subagentRuns?.length > 0 && <SubagentRunsPanel runs={subagentRuns} openRun={openSubagentRun} />}
@@ -248,13 +248,17 @@ function BlankConversationAgentPicker({ agents, selectedAgentId, setSelectedAgen
     <div className="min-w-0 flex-1 truncate text-gray-400 dark:text-slate-500" title={selected.description || ''}>{selected.description || 'Choose who should answer this conversation.'}</div>
   </div>;
 }
-function PreviewTabsPanel({ tabs, open, closeTab, composerHeight }: any) {
+function PreviewTabsPanel({ tabs, open, closeTab, closePanel, composerHeight }: any) {
   const [activeId, setActiveId] = useState('');
   useEffect(() => {
     if (!tabs?.length) return;
     if (!tabs.some((tab: any) => tab.id === activeId)) setActiveId(tabs[0].id);
   }, [tabs?.length, activeId]);
-  if (!open || !tabs?.length) return null;
+  if (!open) return null;
+  if (!tabs?.length) return <aside className="fixed right-4 top-16 z-20 flex w-[min(560px,calc(100vw-320px))] min-w-[360px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-pi dark:border-neutral-800 dark:bg-neutral-950 max-[820px]:inset-0 max-[820px]:z-50 max-[820px]:w-auto max-[820px]:min-w-0 max-[820px]:rounded-none" style={{ bottom: window.matchMedia?.('(max-width: 820px)').matches ? 0 : composerHeight + 28 }}>
+    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-gray-200 px-3 dark:border-neutral-900"><div className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700 dark:text-slate-200">Preview</div><button type="button" className="rounded-lg px-2 py-1 text-sm text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-slate-500 dark:hover:bg-neutral-900 dark:hover:text-slate-200" onClick={() => closePanel?.()}>×</button></div>
+    <div className="flex min-h-0 flex-1 items-center justify-center bg-gray-50 px-6 text-center text-xs text-gray-400 dark:bg-black dark:text-slate-500">No previews yet</div>
+  </aside>;
   const active = tabs.find((tab: any) => tab.id === activeId) || tabs[0];
   const isImage = /\.(png|jpe?g|gif|webp|svg|avif)(?:[?#].*)?$/i.test(String(active.url || active.source || ''));
   return <aside className="fixed right-4 top-16 z-20 flex w-[min(560px,calc(100vw-320px))] min-w-[360px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-pi dark:border-neutral-800 dark:bg-neutral-950 max-[820px]:inset-0 max-[820px]:z-50 max-[820px]:w-auto max-[820px]:min-w-0 max-[820px]:rounded-none" style={{ bottom: window.matchMedia?.('(max-width: 820px)').matches ? 0 : composerHeight + 28 }}>
@@ -692,17 +696,53 @@ function SettingsView({ reloadModels }: any) {
   const [oauthLogin, setOauthLogin] = useState<any>(null);
   const [oauthInput, setOauthInput] = useState('');
   const [status, setStatus] = useState('');
-  async function load() {
-    setStatus('');
-    const res = await fetch('/api/settings/providers');
-    if (!res.ok) throw new Error(await res.text());
-    const json = await res.json();
-    const nextData = json.data || {};
+  function setProviderData(nextData: any) {
     setData(nextData);
     if (!keyProvider) {
       const loggedInProvider = (nextData.oauthProviders || []).find((provider: any) => provider.auth?.configured || provider.auth?.source === 'stored');
       if (loggedInProvider?.id) setKeyProvider(loggedInProvider.id);
     }
+  }
+  async function loadProviderFallbackFromModels() {
+    const res = await fetch('/api/models');
+    if (!res.ok) throw new Error(await res.text());
+    const json = await res.json();
+    const models = json.data?.models || [];
+    const providerIds = new Set(models.map((model: any) => model.provider).filter(Boolean));
+    const providerNames: Record<string, string> = {
+      'openai-codex': 'OpenAI Codex',
+      anthropic: 'Anthropic',
+      'github-copilot': 'GitHub Copilot',
+    };
+    return {
+      path: 'Loaded from running Pi models',
+      authPath: '',
+      oauthProviders: fallbackOAuthProviders.map((provider: any) => ({
+        ...provider,
+        auth: providerIds.has(provider.id) ? { configured: true, source: 'stored', label: 'available models' } : { configured: false },
+      })),
+      apis: ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'mistral-conversations'],
+      builtInProviders: [...providerIds].map((provider: string) => ({
+        id: provider,
+        name: providerNames[provider] || provider,
+        builtin: true,
+        auth: { configured: true, source: 'stored', label: 'available models' },
+      })),
+      customProviders: [],
+    };
+  }
+  async function load() {
+    setStatus('');
+    const res = await fetch('/api/settings/providers');
+    if (!res.ok) {
+      if (res.status === 404) {
+        setProviderData(await loadProviderFallbackFromModels());
+        return;
+      }
+      throw new Error(await res.text());
+    }
+    const json = await res.json();
+    setProviderData(json.data || {});
   }
   useEffect(() => { load().catch((err: any) => setStatus(String(err.message || err))); }, []);
   async function saveProvider(ev: any) {
