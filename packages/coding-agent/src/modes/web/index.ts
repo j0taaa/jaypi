@@ -727,9 +727,30 @@ async function startWebServer(options: WebOptions): Promise<void> {
 			return;
 		}
 		if (req.method === "POST" && url.pathname === "/api/new-session") {
-			const response = await rpc.send({ type: "new_session" });
-			await applyMainSystemPromptOverride();
-			sendJson(res, response, response.success ? 200 : 400);
+			const response = await startNewSession();
+			const state = await currentRpcState();
+			sendJson(
+				res,
+				{
+					...response,
+					data: {
+						...(response.success && "data" in response ? response.data : {}),
+						session: state?.sessionFile
+							? {
+									path: state.sessionFile,
+									id: state.sessionId,
+									cwd: activeCwd,
+									name: state.sessionName || "New Session",
+									firstMessage: "(no messages)",
+									modified: new Date().toISOString(),
+									created: new Date().toISOString(),
+									messageCount: state.messageCount,
+								}
+							: undefined,
+					},
+				},
+				response.success ? 200 : 400,
+			);
 			return;
 		}
 		if (req.method === "POST" && url.pathname === "/api/switch-session") {
@@ -1049,6 +1070,20 @@ async function startWebServer(options: WebOptions): Promise<void> {
 		];
 	}
 
+	async function currentRpcState(): Promise<WebRpcState | null> {
+		const response = await rpc.send<WebRpcResponse & { data?: WebRpcState }>({ type: "get_state" }).catch(() => null);
+		return response?.success ? (response.data ?? null) : null;
+	}
+
+	async function startNewSession(): Promise<WebRpcResponse> {
+		const response = await rpc.send<WebRpcResponse & { data?: { cancelled?: boolean } }>({ type: "new_session" });
+		if (response.success && response.command === "new_session" && !response.data?.cancelled) {
+			await rpc.send({ type: "set_session_name", name: "New Session" });
+			await applyMainSystemPromptOverride();
+		}
+		return response;
+	}
+
 	async function currentSessionFile(): Promise<string | null> {
 		const response = await rpc.send<WebRpcResponse & { data?: { sessionFile?: string } }>({ type: "get_state" });
 		return response.success ? response.data?.sessionFile || null : null;
@@ -1090,9 +1125,7 @@ async function startWebServer(options: WebOptions): Promise<void> {
 					120000,
 				);
 			case "new": {
-				const response = await rpc.send({ type: "new_session" });
-				await applyMainSystemPromptOverride();
-				return response;
+				return startNewSession();
 			}
 			case "export":
 				return rpc.send(

@@ -177,6 +177,8 @@ function App() {
   const queuedPromptsRef = useRef<any[]>([]);
   const drainingQueueRef = useRef(false);
   const projectsRef = useRef<ProjectInfo[]>([]);
+  const routeApplyRef = useRef(0);
+  const sessionSwitchRef = useRef(0);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
   const piWebServerUrl = window.location.origin.replace(/\/+$/, '');
@@ -205,7 +207,11 @@ function App() {
 
   function pushRoute(path: string) { if (location.pathname !== path) history.pushState({}, '', path); }
   function replaceRoute(path: string) { if (location.pathname !== path) history.replaceState({}, '', path); }
-  function go(path: string, nextView?: ViewName) { pushRoute(path); if (nextView) setView(nextView); applyRoute(projects); }
+  function go(path: string, nextView?: ViewName) {
+    pushRoute(path);
+    if (nextView) setView(nextView);
+    else void applyRoute(projectsRef.current);
+  }
   function setTerminalOpen(value: boolean) {
     const key = currentProjectCwd || 'default';
     setTerminalOpenState(value);
@@ -369,7 +375,7 @@ function App() {
     const res = await fetch('/api/prompt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: commandText }) });
     if (!res.ok) throw new Error(await res.text());
     const response = await res.json().catch(() => null);
-    await loadState();
+    const nextState = await loadState();
     const lower = commandText.toLowerCase();
     if (lower.startsWith('/new')) {
       resetStreamingRefs();
@@ -378,9 +384,13 @@ function App() {
       setQueue([]);
       setMessages([]);
       setSelectedChatAgentId('builtin-main');
-      setCurrentSessionPath('');
+      if (nextState?.sessionFile) {
+        currentSessionPathRef.current = nextState.sessionFile;
+        setCurrentSessionPath(nextState.sessionFile);
+        clearSessionUnread(nextState.sessionFile);
+      }
       replaceRoute('/');
-      await loadProjects();
+      await refreshProjectsForSession(nextState?.sessionFile);
       setStatus('ready');
       return;
     }
@@ -438,7 +448,6 @@ function App() {
     const json = await res.json();
     const data = json.projects || [];
     setProjects(data);
-    setTimeout(() => applyRoute(data), 0);
     return data;
   }
   async function refreshProjectsForSession(sessionPath?: string | null) {
@@ -502,6 +511,7 @@ function App() {
     await fetch('/api/agents/registry', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agents: payload }) }).catch(() => {});
   }
   async function applyRoute(projectList = projects) {
+    const applyId = ++routeApplyRef.current;
     const route = routeInfo();
     if (route.page === 'skills') { setView('skills'); loadSkills(); return; }
     if (route.page === 'tools') { setView('tools'); return; }
@@ -511,15 +521,17 @@ function App() {
     if (route.page === 'conversation') {
       const project = projectList.find(project => projectRouteId(project) === route.projectId);
       const session = project?.sessions.find(session => conversationRouteId(session) === route.conversationId || session.id === route.conversationId);
+      if (applyId !== routeApplyRef.current) return;
       if (project && session) await openSession(project, session, false);
     }
   }
   async function openSession(project: ProjectInfo, session: SessionInfo, updateUrl = true) {
+    const switchId = ++sessionSwitchRef.current;
     setView('chat');
     const previousRoute = window.location.pathname + window.location.search;
     if (updateUrl) pushRoute(sessionRoute(project, session));
     clearSessionUnread(session.path);
-    if (currentSessionPath === session.path) return;
+    if (activeSessionPath() === session.path) return;
     setStatus('switching session…');
     setQueue([]);
     const controller = new AbortController();
@@ -527,6 +539,7 @@ function App() {
     try {
       const res = await fetch('/api/switch-session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionPath: session.path }), signal: controller.signal });
       if (!res.ok) throw new Error(await res.text());
+      if (switchId !== sessionSwitchRef.current) return;
       currentSessionPathRef.current = session.path;
       setCurrentSessionPath(session.path);
       await loadMessages();
@@ -538,12 +551,13 @@ function App() {
       if (updateUrl) replaceRoute(previousRoute);
     } finally {
       clearTimeout(timeout);
-      setStatus('ready');
+      if (switchId === sessionSwitchRef.current) setStatus('ready');
     }
   }
   async function newChat() {
-    await fetch('/api/new-session', { method: 'POST' });
-    setCurrentSessionPath('');
+    const switchId = ++sessionSwitchRef.current;
+    const res = await fetch('/api/new-session', { method: 'POST' });
+    if (!res.ok) { addItem({ kind: 'tool', title: 'New chat failed', text: await res.text(), error: true }); return; }
     replaceRoute('/');
     setView('chat');
     resetStreamingRefs();
@@ -554,7 +568,14 @@ function App() {
     setSelectedChatAgentId('builtin-main');
     setProgressTracker(null);
     setStatus('ready');
-    await loadProjects();
+    const nextState = await loadState();
+    if (switchId !== sessionSwitchRef.current) return;
+    if (nextState?.sessionFile) {
+      currentSessionPathRef.current = nextState.sessionFile;
+      setCurrentSessionPath(nextState.sessionFile);
+      clearSessionUnread(nextState.sessionFile);
+    }
+    await refreshProjectsForSession(nextState?.sessionFile);
   }
 
   useEffect(() => { projectsRef.current = projects; }, [projects]);
@@ -563,8 +584,14 @@ function App() {
   useEffect(() => { currentSessionPathRef.current = currentSessionPath; }, [currentSessionPath]);
   useEffect(() => { queuedPromptsRef.current = queuedPrompts; setTimeout(drainPromptQueue, 1000); }, []);
   useEffect(() => {
-    loadState(); loadModels(); loadCommands(); loadProjects();
-    if (routeInfo().page === 'chat') loadMessages();
+    loadModels();
+    loadCommands();
+    (async () => {
+      const projectList = await loadProjects();
+      await loadState();
+      await applyRoute(projectList);
+      if (routeInfo().page === 'chat') await loadMessages();
+    })();
     const pop = () => applyRoute(projectsRef.current);
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
@@ -831,10 +858,12 @@ function App() {
     await loadProjects(); setStatus('ready');
   }
   function setCollapsed(cwd: string) {
-    const next = new Set(collapsedProjects);
-    next.has(cwd) ? next.delete(cwd) : next.add(cwd);
-    setCollapsedProjects(next);
-    localStorage.setItem('piWebCollapsedProjects', JSON.stringify([...next]));
+    setCollapsedProjects(prev => {
+      const next = new Set(prev);
+      next.has(cwd) ? next.delete(cwd) : next.add(cwd);
+      localStorage.setItem('piWebCollapsedProjects', JSON.stringify([...next]));
+      return next;
+    });
   }
   function removeProject(cwd: string) {
     const next = new Set(hiddenProjects); next.add(cwd); setHiddenProjects(next);

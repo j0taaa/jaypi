@@ -29,7 +29,7 @@ function SettingsIcon() {
   return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9.7 3.4c.6-1.9 4-1.9 4.6 0l.2.7a2.4 2.4 0 0 0 3.1 1.4l.7-.3c1.8-.8 4.2 1.6 3.4 3.4l-.3.7a2.4 2.4 0 0 0 1.4 3.1l.7.2c1.9.6 1.9 4 0 4.6l-.7.2a2.4 2.4 0 0 0-1.4 3.1l.3.7c.8 1.8-1.6 4.2-3.4 3.4l-.7-.3a2.4 2.4 0 0 0-3.1 1.4l-.2.7c-.6 1.9-4 1.9-4.6 0l-.2-.7a2.4 2.4 0 0 0-3.1-1.4l-.7.3c-1.8.8-4.2-1.6-3.4-3.4l.3-.7a2.4 2.4 0 0 0-1.4-3.1l-.7-.2c-1.9-.6-1.9-4 0-4.6l.7-.2a2.4 2.4 0 0 0 1.4-3.1l-.3-.7c-.8-1.8 1.6-4.2 3.4-3.4l.7.3a2.4 2.4 0 0 0 3.1-1.4l.2-.7Z" /><circle cx="12" cy="12" r="3.2" /></svg>;
 }
 function ProjectTree({ project, collapsed, icon, currentSessionPath, sessionStates, onToggle, onOpen, onMenu }: any) {
-  const shown = collapsed ? [] : project.sessions.slice(0, 10);
+  const shown = collapsed ? [] : project.sessions;
   return <div className="mb-2.5">
     <div className="group mx-1 flex cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs text-[#666] hover:bg-piHover dark:text-slate-300 dark:hover:bg-neutral-900" onClick={onToggle} title={project.cwd}>
       <span className={'w-3 text-[11px] text-gray-500 transition dark:text-slate-500 ' + (collapsed ? '-rotate-90' : '')}>⌄</span>

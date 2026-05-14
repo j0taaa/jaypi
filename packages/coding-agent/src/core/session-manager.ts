@@ -809,9 +809,7 @@ export class SessionManager {
 		}
 
 		if (!this.flushed) {
-			for (const e of this.fileEntries) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(e)}\n`);
-			}
+			this._rewriteFile();
 			this.flushed = true;
 		} else {
 			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
@@ -917,6 +915,8 @@ export class SessionManager {
 			name: name.trim(),
 		};
 		this._appendEntry(entry);
+		this._rewriteFile();
+		this.flushed = true;
 		return entry.id;
 	}
 
