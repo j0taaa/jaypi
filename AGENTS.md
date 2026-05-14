@@ -63,8 +63,8 @@ When closing issues via commit:
 ## PR Workflow
 
 - Analyze PRs without pulling locally first
-- If the user approves: create a feature branch, pull PR, rebase on main, apply adjustments, commit, merge into main, push, close PR, and leave a comment in the user's tone
-- You never open PRs yourself. We work in feature branches until everything is according to the user's requirements, then merge into main, and push.
+- If the user approves: apply adjustments, commit, push, close PR, and leave a comment in the user's tone
+- You never open PRs yourself.
 
 ## Testing pi Interactive Mode with tmux
 
@@ -194,7 +194,7 @@ The script handles: version bump, CHANGELOG finalization, commit, tag, publish, 
 
 ## **CRITICAL** Git Rules for Parallel Agents **CRITICAL**
 
-Multiple agents may work on different files in the same worktree simultaneously. You MUST follow these rules:
+Multiple agents may work on different files simultaneously. You MUST follow these rules:
 
 ### Committing
 
@@ -230,15 +230,9 @@ git add packages/ai/CHANGELOG.md
 # 3. Commit
 git commit -m "fix(ai): description"
 
-# 4. Push (pull --rebase if needed, but NEVER reset/checkout)
-git pull --rebase && git push
+# 4. Push
+git push
 ```
-
-### If Rebase Conflicts Occur
-
-- Resolve conflicts in YOUR files only
-- If conflict is in a file you didn't modify, abort and ask the user
-- NEVER force push
 
 ### User override
 
