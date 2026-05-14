@@ -771,7 +771,6 @@ function App() {
   function closePreviewTab(id: string) {
     setPreviewTabs(prev => {
       const next = prev.filter(tab => tab.id !== id);
-      if (next.length === 0) setPreviewPanelOpen(false);
       return next;
     });
   }

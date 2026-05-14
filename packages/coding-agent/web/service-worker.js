@@ -1,4 +1,4 @@
-const CACHE_NAME = "pi-web-v1";
+const CACHE_NAME = "pi-web-v2";
 const APP_SHELL = [
 	"/",
 	"/favicon.svg",
@@ -33,6 +33,21 @@ self.addEventListener("fetch", (event) => {
 
 	if (request.mode === "navigate") {
 		event.respondWith(fetch(request).catch(() => caches.match("/") ?? Response.error()));
+		return;
+	}
+
+	if (url.pathname.startsWith("/web/") || url.pathname === "/service-worker.js") {
+		event.respondWith(
+			fetch(request)
+				.then((response) => {
+					if (response && response.status === 200) {
+						const copy = response.clone();
+						caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+					}
+					return response;
+				})
+				.catch(() => caches.match(request) ?? Response.error()),
+		);
 		return;
 	}
 

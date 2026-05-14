@@ -250,26 +250,52 @@ function BlankConversationAgentPicker({ agents, selectedAgentId, setSelectedAgen
 }
 function PreviewTabsPanel({ tabs, open, closeTab, closePanel, composerHeight }: any) {
   const [activeId, setActiveId] = useState('');
+  const [source, setSource] = useState('');
+  const [error, setError] = useState('');
+  const [opening, setOpening] = useState(false);
+  const sourceRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!tabs?.length) return;
     if (!tabs.some((tab: any) => tab.id === activeId)) setActiveId(tabs[0].id);
   }, [tabs?.length, activeId]);
   if (!open) return null;
-  if (!tabs?.length) return <aside className="fixed right-4 top-16 z-20 flex w-[min(560px,calc(100vw-320px))] min-w-[360px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-pi dark:border-neutral-800 dark:bg-neutral-950 max-[820px]:inset-0 max-[820px]:z-50 max-[820px]:w-auto max-[820px]:min-w-0 max-[820px]:rounded-none" style={{ bottom: window.matchMedia?.('(max-width: 820px)').matches ? 0 : composerHeight + 28 }}>
-    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-gray-200 px-3 dark:border-neutral-900"><div className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700 dark:text-slate-200">Preview</div><button type="button" className="rounded-lg px-2 py-1 text-sm text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-slate-500 dark:hover:bg-neutral-900 dark:hover:text-slate-200" onClick={() => closePanel?.()}>×</button></div>
-    <div className="flex min-h-0 flex-1 items-center justify-center bg-gray-50 px-6 text-center text-xs text-gray-400 dark:bg-black dark:text-slate-500">No previews yet</div>
-  </aside>;
-  const active = tabs.find((tab: any) => tab.id === activeId) || tabs[0];
-  const isImage = /\.(png|jpe?g|gif|webp|svg|avif)(?:[?#].*)?$/i.test(String(active.url || active.source || ''));
+  const active = tabs.find((tab: any) => tab.id === activeId) || tabs[0] || null;
+  const isImage = /\.(png|jpe?g|gif|webp|svg|avif)(?:[?#].*)?$/i.test(String(active?.url || active?.source || ''));
+  async function openPreview(ev?: any) {
+    ev?.preventDefault?.();
+    const sourceInput = sourceRef.current || document.querySelector<HTMLInputElement>('[data-preview-source-input]');
+    const nextSource = String(sourceInput?.value || source).trim();
+    if (!nextSource) return;
+    setOpening(true);
+    setError('');
+    try {
+      const res = await fetch('/api/preview-tab', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source: nextSource }) });
+      if (!res.ok) throw new Error(await res.text());
+      setSource('');
+    } catch (err: any) {
+      setError(String(err.message || err));
+    } finally {
+      setOpening(false);
+    }
+  }
   return <aside className="fixed right-4 top-16 z-20 flex w-[min(560px,calc(100vw-320px))] min-w-[360px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-pi dark:border-neutral-800 dark:bg-neutral-950 max-[820px]:inset-0 max-[820px]:z-50 max-[820px]:w-auto max-[820px]:min-w-0 max-[820px]:rounded-none" style={{ bottom: window.matchMedia?.('(max-width: 820px)').matches ? 0 : composerHeight + 28 }}>
-    <div className="flex h-11 shrink-0 items-center gap-1 border-b border-gray-200 px-2 dark:border-neutral-900">
-      <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
-        {tabs.map((tab: any) => <button key={tab.id} type="button" className={'max-w-44 truncate rounded-lg px-2.5 py-1.5 text-xs font-semibold ' + (tab.id === active.id ? 'bg-gray-900 text-white dark:bg-slate-100 dark:text-black' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-neutral-900')} title={tab.source || tab.url} onClick={() => setActiveId(tab.id)}>{tab.title || baseName(tab.source || tab.url)}</button>)}
-      </div>
-      <button type="button" className="rounded-lg px-2 py-1 text-sm text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-slate-500 dark:hover:bg-neutral-900 dark:hover:text-slate-200" onClick={() => closeTab?.(active.id)}>×</button>
+    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-gray-200 px-3 dark:border-neutral-900">
+      <div className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700 dark:text-slate-200">Preview</div>
+      {active && <button type="button" className="rounded-lg px-2 py-1 text-xs font-semibold text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-slate-500 dark:hover:bg-neutral-900 dark:hover:text-slate-200" onClick={() => closeTab?.(active.id)}>Close tab</button>}
+      <button type="button" className="rounded-lg px-2 py-1 text-sm text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-slate-500 dark:hover:bg-neutral-900 dark:hover:text-slate-200" onClick={() => closePanel?.()}>×</button>
     </div>
+    <form className="flex shrink-0 gap-2 border-b border-gray-200 p-3 dark:border-neutral-900" onSubmit={openPreview}>
+      <input ref={sourceRef} data-preview-source-input="true" className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 outline-none focus:border-piAccent dark:border-neutral-800 dark:bg-black dark:text-slate-100" value={source} onInput={ev => setSource((ev.target as HTMLInputElement).value)} onChange={ev => setSource(ev.target.value)} onKeyDown={ev => { if (ev.key === 'Enter') openPreview(ev); }} placeholder="Enter URL or file path" />
+      <button type="button" disabled={opening} className="rounded-xl bg-gray-900 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-black" onClick={openPreview}>{opening ? 'Opening' : 'Open'}</button>
+    </form>
+    {error && <div className="shrink-0 border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-950 dark:bg-red-950/30 dark:text-red-200">{error}</div>}
+    {tabs?.length > 0 && <div className="flex h-10 shrink-0 items-center gap-1 border-b border-gray-200 px-2 dark:border-neutral-900">
+      <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+        {tabs.map((tab: any) => <button key={tab.id} type="button" className={'max-w-44 truncate rounded-lg px-2.5 py-1.5 text-xs font-semibold ' + (active && tab.id === active.id ? 'bg-gray-900 text-white dark:bg-slate-100 dark:text-black' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-neutral-900')} title={tab.source || tab.url} onClick={() => setActiveId(tab.id)}>{tab.title || baseName(tab.source || tab.url)}</button>)}
+      </div>
+    </div>}
     <div className="min-h-0 flex-1 bg-gray-50 dark:bg-black">
-      {isImage ? <div className="flex h-full items-center justify-center overflow-auto p-4"><img src={active.url} alt={active.title || 'preview'} className="max-h-full max-w-full object-contain" /></div> : <iframe title={active.title || 'Preview'} src={active.url} className="h-full w-full border-0 bg-white dark:bg-black" />}
+      {!active ? <div className="flex h-full items-center justify-center px-6 text-center text-xs text-gray-400 dark:text-slate-500">No previews yet. Enter a URL or file path above.</div> : isImage ? <div className="flex h-full items-center justify-center overflow-auto p-4"><img src={active.url} alt={active.title || 'preview'} className="max-h-full max-w-full object-contain" /></div> : <iframe title={active.title || 'Preview'} src={active.url} className="h-full w-full border-0 bg-white dark:bg-black" />}
     </div>
   </aside>;
 }
