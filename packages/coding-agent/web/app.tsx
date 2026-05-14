@@ -126,6 +126,7 @@ function App() {
   const [progressTracker, setProgressTracker] = useState<any>(null);
   const [subagentRuns, setSubagentRuns] = useState<any[]>([]);
   const [previewTabs, setPreviewTabs] = useState<any[]>([]);
+  const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitProjectStatus | null>(null);
   const [gitBranches, setGitBranches] = useState<GitBranchInfo[]>([]);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
@@ -566,6 +567,7 @@ function App() {
     }
     if (e.type === 'preview_tab') {
       setPreviewTabs(prev => [e.data, ...prev.filter(tab => tab.id !== e.data?.id)].filter(Boolean).slice(0, 6));
+      setPreviewPanelOpen(true);
       setStatus('preview opened');
       setTimeout(() => setStatus('ready'), 1200);
     }
@@ -700,7 +702,19 @@ function App() {
     }
   }
   function closePreviewTab(id: string) {
-    setPreviewTabs(prev => prev.filter(tab => tab.id !== id));
+    setPreviewTabs(prev => {
+      const next = prev.filter(tab => tab.id !== id);
+      if (next.length === 0) setPreviewPanelOpen(false);
+      return next;
+    });
+  }
+  function togglePreviewPanel() {
+    if (previewTabs.length === 0) {
+      setStatus('no previews');
+      setTimeout(() => setStatus('ready'), 1200);
+      return;
+    }
+    setPreviewPanelOpen(!previewPanelOpen);
   }
   async function openSubagentRun(run: any) {
     if (!run?.sessionFile) return;
@@ -857,13 +871,13 @@ function App() {
     <section className="relative flex h-screen min-w-0 flex-col">
       {view === 'chat' && <header className="fixed left-[290px] right-0 top-0 z-10 flex h-12 items-center justify-between border-b border-gray-100 bg-white/95 px-4 dark:border-neutral-900 dark:bg-black/95 max-[820px]:left-0">
         <div className="flex items-center gap-2"><button type="button" className="hidden rounded-lg bg-gray-100 px-2 py-1 text-gray-700 dark:bg-neutral-900 dark:text-slate-200 max-[820px]:block" onClick={() => setSidebarOpen(true)}>☰</button><h1 className="text-xs font-semibold">π Pi Web</h1></div>
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400"><ThemeToggle value={themePreference} onChange={setThemePreference} /><span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-neutral-900 dark:text-slate-300">{contextText}</span><span>{status}</span><button type="button" className={'rounded-lg px-3 py-1 font-semibold text-gray-700 hover:bg-gray-200 dark:text-slate-200 dark:hover:bg-neutral-800 max-[1099px]:hidden ' + (gitPanelHidden ? 'bg-gray-100 dark:bg-neutral-900' : 'bg-gray-200 dark:bg-neutral-800')} onClick={() => setDesktopGitPanelHidden(!gitPanelHidden)}>Git</button><button type="button" className="hidden rounded-lg bg-gray-100 px-3 py-1 font-semibold text-gray-700 hover:bg-gray-200 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-neutral-800 max-[1099px]:block" onClick={() => setGitPanelOpen(true)}>Git</button><button type="button" title="Terminal" aria-label="Terminal" className={'flex h-7 w-7 items-center justify-center rounded-lg ' + (terminalOpen ? 'bg-gray-900 text-white dark:bg-slate-100 dark:text-black' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-neutral-800')} onClick={() => setTerminalOpen(!terminalOpen)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 7 5 5-5 5" /><path d="M12 19h8" /></svg></button></div>
+        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400"><ThemeToggle value={themePreference} onChange={setThemePreference} /><span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-neutral-900 dark:text-slate-300">{contextText}</span><span>{status}</span><button type="button" className={'rounded-lg px-3 py-1 font-semibold text-gray-700 hover:bg-gray-200 dark:text-slate-200 dark:hover:bg-neutral-800 ' + (previewPanelOpen && previewTabs.length > 0 ? 'bg-gray-200 dark:bg-neutral-800' : 'bg-gray-100 dark:bg-neutral-900')} onClick={togglePreviewPanel}>Preview{previewTabs.length > 0 ? ' ' + previewTabs.length : ''}</button><button type="button" className={'rounded-lg px-3 py-1 font-semibold text-gray-700 hover:bg-gray-200 dark:text-slate-200 dark:hover:bg-neutral-800 max-[1099px]:hidden ' + (gitPanelHidden ? 'bg-gray-100 dark:bg-neutral-900' : 'bg-gray-200 dark:bg-neutral-800')} onClick={() => setDesktopGitPanelHidden(!gitPanelHidden)}>Git</button><button type="button" className="hidden rounded-lg bg-gray-100 px-3 py-1 font-semibold text-gray-700 hover:bg-gray-200 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-neutral-800 max-[1099px]:block" onClick={() => setGitPanelOpen(true)}>Git</button><button type="button" title="Terminal" aria-label="Terminal" className={'flex h-7 w-7 items-center justify-center rounded-lg ' + (terminalOpen ? 'bg-gray-900 text-white dark:bg-slate-100 dark:text-black' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-neutral-800')} onClick={() => setTerminalOpen(!terminalOpen)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 7 5 5-5 5" /><path d="M12 19h8" /></svg></button></div>
       </header>}
       {view !== 'chat' && <header className="fixed left-[290px] right-0 top-0 z-10 flex h-12 items-center justify-between border-b border-gray-100 bg-white/95 px-4 dark:border-neutral-900 dark:bg-black/95 max-[820px]:left-0">
         <div className="flex items-center gap-2"><button type="button" className="hidden rounded-lg bg-gray-100 px-2 py-1 text-gray-700 dark:bg-neutral-900 dark:text-slate-200 max-[820px]:block" onClick={() => setSidebarOpen(true)}>☰</button><h1 className="text-xs font-semibold">{view === 'skills' ? 'Skills' : view === 'tools' ? 'Tools' : 'Agents'}</h1></div>
         <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500"><ThemeToggle value={themePreference} onChange={setThemePreference} /><span>π Pi Web</span></div>
       </header>}
-      {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} subagentRuns={subagentRuns} openSubagentRun={openSubagentRun} previewTabs={previewTabs} closePreviewTab={closePreviewTab} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} agentOptions={availableChatAgents} selectedAgentId={selectedChatAgentId} setSelectedAgentId={setSelectedChatAgentId} showAgentPicker={emptyChat} />}
+      {view === 'chat' && <ChatView logRef={logRef} messages={messages} input={input} setInput={setInput} submitPrompt={submitPrompt} submitMessage={submitMessage} answerQuestion={answerQuestion} abortGeneration={abortGeneration} busy={busy} queuedPrompts={queuedPrompts} removeQueuedPrompt={(id: string) => setQueue(queuedPromptsRef.current.filter(item => item.id !== id))} progressTracker={progressTracker} removeProgressTracker={removeProgressTracker} subagentRuns={subagentRuns} openSubagentRun={openSubagentRun} previewTabs={previewTabs} previewOpen={previewPanelOpen} closePreviewTab={closePreviewTab} models={models} commands={commands} state={state} loadState={loadState} focusKey={(state?.cwd || '') + ':' + currentSessionPath} terminalOpen={terminalOpen} setTerminalOpen={setTerminalOpen} agentOptions={availableChatAgents} selectedAgentId={selectedChatAgentId} setSelectedAgentId={setSelectedChatAgentId} showAgentPicker={emptyChat} />}
       {view === 'skills' && <SkillsView skills={skills} reload={async () => { await loadSkills(); await loadCommands(); }} openModal={setSkillModal} />}
       {view === 'tools' && <ToolsView tools={[...builtinTools, ...tools]} openModal={setToolModal} saveTools={saveTools} customTools={tools} />}
       {view === 'agents' && <AgentsView builtinAgents={resolvedBuiltinAgents} customAgents={agents} openModal={setAgentModal} saveAgents={saveAgents} />}

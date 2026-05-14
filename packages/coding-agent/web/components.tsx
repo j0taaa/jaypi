@@ -40,7 +40,7 @@ function ProjectTree({ project, collapsed, icon, currentSessionPath, onToggle, o
     </div>)}
   </div>;
 }
-function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, previewTabs, closePreviewTab, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker, rightRailOpen }: any) {
+function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessage, answerQuestion, abortGeneration, busy, queuedPrompts, removeQueuedPrompt, progressTracker, removeProgressTracker, subagentRuns, openSubagentRun, previewTabs, previewOpen, closePreviewTab, models, commands, state, loadState, focusKey, terminalOpen, setTerminalOpen, agentOptions, selectedAgentId, setSelectedAgentId, showAgentPicker, rightRailOpen }: any) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,7 +172,7 @@ function ChatView({ logRef, messages, input, setInput, submitPrompt, submitMessa
       {renderStart > 0 && <div className="py-3 text-center text-xs text-gray-400">Scroll up to load older messages</div>}
       {messages.slice(renderStart).map((item: ChatItem) => <Message key={item.id} item={item} answerQuestion={answerQuestion} cwd={state?.cwd} />)}
     </div></main>
-    <PreviewTabsPanel tabs={previewTabs || []} closeTab={closePreviewTab} composerHeight={composerHeight} />
+    <PreviewTabsPanel tabs={previewTabs || []} open={previewOpen} closeTab={closePreviewTab} composerHeight={composerHeight} />
     <form ref={formRef} onSubmit={submitPrompt} className={'fixed bottom-0 left-[290px] bg-gradient-to-t from-white via-white px-6 pb-4 pt-3 dark:from-black dark:via-black max-[820px]:left-0 ' + (rightRailOpen ? 'right-0 min-[1100px]:right-[520px]' : 'right-0')}><div className="mx-auto w-full max-w-6xl">
       {progressTracker && <ProgressTrackerPanel tracker={progressTracker} onRemove={removeProgressTracker} />}
       {subagentRuns?.length > 0 && <SubagentRunsPanel runs={subagentRuns} openRun={openSubagentRun} />}
@@ -237,13 +237,13 @@ function BlankConversationAgentPicker({ agents, selectedAgentId, setSelectedAgen
     <div className="min-w-0 flex-1 truncate text-gray-400 dark:text-slate-500" title={selected.description || ''}>{selected.description || 'Choose who should answer this conversation.'}</div>
   </div>;
 }
-function PreviewTabsPanel({ tabs, closeTab, composerHeight }: any) {
+function PreviewTabsPanel({ tabs, open, closeTab, composerHeight }: any) {
   const [activeId, setActiveId] = useState('');
   useEffect(() => {
     if (!tabs?.length) return;
     if (!tabs.some((tab: any) => tab.id === activeId)) setActiveId(tabs[0].id);
   }, [tabs?.length, activeId]);
-  if (!tabs?.length) return null;
+  if (!open || !tabs?.length) return null;
   const active = tabs.find((tab: any) => tab.id === activeId) || tabs[0];
   const isImage = /\.(png|jpe?g|gif|webp|svg|avif)(?:[?#].*)?$/i.test(String(active.url || active.source || ''));
   return <aside className="fixed right-4 top-16 z-20 flex w-[min(560px,calc(100vw-320px))] min-w-[360px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-pi dark:border-neutral-800 dark:bg-neutral-950 max-[820px]:inset-0 max-[820px]:z-50 max-[820px]:w-auto max-[820px]:min-w-0 max-[820px]:rounded-none" style={{ bottom: window.matchMedia?.('(max-width: 820px)').matches ? 0 : composerHeight + 28 }}>
