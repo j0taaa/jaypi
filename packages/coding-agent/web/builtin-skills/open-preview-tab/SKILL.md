@@ -7,10 +7,13 @@ description: Open a new Pi web preview tab in the current conversation for a URL
 
 Use this skill when the user asks to open, show, preview, or keep visible a website, local HTML/PDF/Markdown/text/image file, screenshot, generated artifact, or other previewable output in the Pi web preview sidebar.
 
-When `PI_WEB_PREVIEW_TAB_URL` is available, open a new preview tab by sending the source to Pi web:
+Pi web provides `Current Pi web server URL` in the system prompt when this skill is available. Use that URL plus `/api/preview-tab` to open a new preview tab:
 
 ```sh
-curl -fsS -X POST "$PI_WEB_PREVIEW_TAB_URL" \
+# Replace this with the exact value from "Current Pi web server URL".
+pi_web_url="http://127.0.0.1:5173"
+
+curl -fsS -X POST "$pi_web_url/api/preview-tab" \
   -H 'content-type: application/json' \
   -d '{"source":"<url-or-local-file-path>"}'
 ```
@@ -27,4 +30,4 @@ Do not add `http://` or `https://` to local file paths. Pi web will normalize ho
 
 Prefer this skill over pasting long file contents into chat when the user wants to visually inspect a rendered artifact. After opening the preview tab, mention briefly what was opened.
 
-If `PI_WEB_PREVIEW_TAB_URL` is not available, tell the user the preview tab endpoint is not available in this session and provide the URL or file path they can paste into the preview sidebar manually.
+If `Current Pi web server URL` is not available, tell the user the preview tab endpoint is not available in this session and provide the URL or file path they can paste into the preview sidebar manually.
